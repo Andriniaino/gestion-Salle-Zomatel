@@ -1,0 +1,575 @@
+import { useEffect, useMemo, useState } from "react"
+import axios from "axios"
+import Header from "./Header"
+import WeekView from "../WeekView"
+
+const PER_PAGE = 10
+
+export default function PerteAdmin() {
+  const [pertes, setPertes] = useState([])
+  const [loading, setLoading] = useState(true)
+
+  const [serviceFilter, setServiceFilter] = useState("all")
+  const [currentPage, setCurrentPage] = useState(1)
+  const [showWeekView, setShowWeekView] = useState(false)
+  const [searchTerm, setSearchTerm] = useState("")
+
+
+  const [showDeleteModal, setShowDeleteModal] = useState(false)
+  const [perteToDelete, setPerteToDelete] = useState(null)
+
+
+  const [showEditModal, setShowEditModal] = useState(false)
+  const [selectedPerte, setSelectedPerte] = useState(null)
+  const [editForm, setEditForm] = useState({
+    quantite: "",
+    commentaire: "",
+  })
+
+  /* =========================
+     FETCH
+  ========================= */
+  useEffect(() => {
+    axios.get("http://localhost:8000/api/pertes")
+      .then(res => {
+        setPertes(res.data.data || [])
+        setLoading(false)
+      })
+      .catch(() => setLoading(false))
+  }, [])
+
+
+  //bouton pertes
+
+
+
+  const API_BASE = "http://127.0.0.1:8000";
+
+  const exportPertes = async (categorie) => {
+    try {
+      let url = `${API_BASE}/api/pertes/export`;
+      if (categorie && categorie !== "tous") {
+        url += `?categorie=${encodeURIComponent(categorie)}`;
+      }
+
+      const response = await axios.get(url, { responseType: "blob" });
+
+      const blob = new Blob([response.data], {
+        type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      });
+
+      const link = document.createElement("a");
+      link.href = window.URL.createObjectURL(blob);
+
+      const filename =
+        categorie && categorie !== "tous"
+          ? `pertes_${categorie.replaceAll(" / ", "_")}.xlsx`
+          : "pertes_tous.xlsx";
+
+      link.download = filename;
+      link.click();
+    } catch (error) {
+      console.error("Erreur export :", error);
+      alert("❌ Erreur lors de l'export Excel !");
+    }
+  };
+
+  /* =========================
+     FILTRAGE SERVICE + RECHERCHE GLOBALE
+  ========================= */
+  const filteredPertes = useMemo(() => {
+    let filtered = pertes
+
+    // Filtre par service
+    if (serviceFilter !== "all") {
+      filtered = filtered.filter(p =>
+        p.article?.categorie?.toLowerCase().includes(serviceFilter)
+      )
+    }
+
+    // Recherche globale
+    if (searchTerm.trim()) {
+      const term = searchTerm.toLowerCase().trim()
+      filtered = filtered.filter(p => {
+        const articleLibelle = p.article?.libelle?.toLowerCase() || ""
+        const articleCategorie = p.article?.categorie?.toLowerCase() || ""
+        const commentaire = p.commentaire?.toLowerCase() || ""
+        const produit = String(p.produit || "").toLowerCase()
+        const date = p.created_at ? new Date(p.created_at).toLocaleString("fr-FR").toLowerCase() : ""
+
+        return (
+          articleLibelle.includes(term) ||
+          articleCategorie.includes(term) ||
+          commentaire.includes(term) ||
+          produit.includes(term) ||
+          date.includes(term)
+        )
+      })
+    }
+
+    return filtered
+  }, [pertes, serviceFilter, searchTerm])
+
+  /* =========================
+     TRI PAR DATE (DESC)
+  ========================= */
+  const sortedPertes = useMemo(() => {
+    return [...filteredPertes].sort(
+      (a, b) => new Date(b.created_at) - new Date(a.created_at)
+    )
+  }, [filteredPertes])
+
+  /* =========================
+     PAGINATION
+  ========================= */
+  const totalPages = Math.ceil(sortedPertes.length / PER_PAGE)
+
+  const paginatedPertes = useMemo(() => {
+    const start = (currentPage - 1) * PER_PAGE
+    return sortedPertes.slice(start, start + PER_PAGE)
+  }, [sortedPertes, currentPage])
+
+  const handleServiceFilter = (service) => {
+    setServiceFilter(service || "all")
+    setCurrentPage(1)
+  }
+
+  const handleSearchChange = (e) => {
+    setSearchTerm(e.target.value)
+    setCurrentPage(1) // Réinitialiser à la première page lors de la recherche
+  }
+
+  const handleClearSearch = () => {
+    setSearchTerm("")
+    setCurrentPage(1)
+  }
+
+  if (loading) {
+    return <p className="text-center mt-4">Chargement des pertes...</p>
+  }
+  //modification et supre
+  const handleDelete = (id) => {
+    setPerteToDelete(id)
+    setShowDeleteModal(true)
+  }
+
+  const confirmDelete = async () => {
+    try {
+      await axios.delete(`http://localhost:8000/api/pertes/${perteToDelete}`)
+
+      setPertes(prev => prev.filter(p => p.id !== perteToDelete))
+
+
+      setShowDeleteModal(false)
+      setPerteToDelete(null)
+
+    } catch (error) {
+      console.error(error)
+      alert("Erreur lors de la suppression ❌")
+    }
+  }
+
+  // (export Excel géré via exportPertes)
+
+
+  // edit pertes
+  const handleEdit = (perte) => {
+    setSelectedPerte(perte)
+    setEditForm({
+      quantite: perte.produit,
+      commentaire: perte.commentaire || "",
+    })
+    setShowEditModal(true)
+  }
+
+
+  const handleUpdatePerte = async () => {
+    try {
+      await axios.put(`http://localhost:8000/api/pertes/${selectedPerte.id}`, {
+        produit: editForm.quantite,
+        commentaire: editForm.commentaire,
+      })
+
+      // mise à jour locale
+      setPertes(prev =>
+        prev.map(p =>
+          p.id === selectedPerte.id
+            ? { ...p, produit: editForm.quantite, commentaire: editForm.commentaire }
+            : p
+        )
+      )
+
+      setShowEditModal(false)
+      setSelectedPerte(null)
+      // 2. MESSAGE DE CONFIRMATION 👇
+      alert("La perte a été modifiée avec succès.")
+
+
+    } catch (error) {
+      alert("Erreur lors de la modification")
+    }
+  }
+
+
+  return (
+    <div className="container-fluid mt-4">
+
+      {/* HEADER */}
+
+
+      <Header
+        showWeekView={showWeekView}
+        setShowWeekView={setShowWeekView}
+        handleCategoryFilter={handleServiceFilter}
+        serviceFilter={serviceFilter}
+      />
+
+      {showWeekView ? (
+        <div className="mt-5 pt-4">
+          <WeekView
+            onBack={() => setShowWeekView(false)}
+            selectedCategory={serviceFilter === "all" ? "" : serviceFilter}
+          />
+        </div>
+      ) : (
+        <>
+      <div className="text-center" style={{ marginTop: "2cm" }}>
+        <h4 className="mb-3 text-danger fw-bold">
+          📉 Gestion des pertes
+        </h4>
+      </div>
+
+      <div className="d-flex justify-content-between align-items-center mb-3">
+
+        {/* Bouton Exporter */}
+        <div>
+          <button className="btn btn-success dropdown-toggle" data-bs-toggle="dropdown">
+            📤 Exporter
+          </button>
+
+          <ul className="dropdown-menu">
+            <li><button className="dropdown-item" onClick={() => exportPertes("tous")}>📄 Exporter tous</button></li>
+
+
+            <li><hr className="dropdown-divider" /></li>
+
+
+            <li><button className="dropdown-item" onClick={() => exportPertes("Boisson / Resto")}>Boisson / Resto</button></li>
+            <li><button className="dropdown-item" onClick={() => exportPertes("Boisson / Détente")}>Boisson / Détente</button></li>
+            <li><button className="dropdown-item" onClick={() => exportPertes("Boisson / Snack")}>Boisson / Snack</button></li>
+
+
+            <li><hr className="dropdown-divider" /></li>
+
+
+            <li><button className="dropdown-item" onClick={() => exportPertes("Salle / Resto")}>Salle / Resto</button></li>
+            <li><button className="dropdown-item" onClick={() => exportPertes("Salle / Détente")}>Salle / Détente</button></li>
+            <li><button className="dropdown-item" onClick={() => exportPertes("Salle / Snack")}>Salle / Snack</button></li>
+          </ul>
+        </div>
+
+        {/* Barre de recherche (code tsy ovaina) */}
+        <div style={{ width: "60%" }}>
+          <div className="mb-4 mb-0">
+            <div className="row align-items-center">
+              <div className="col-md-8">
+                <div className="input-group">
+                  <span className="input-group-text bg-light">
+                    <i className="bi bi-search"></i>
+                  </span>
+                  <input 
+                    type="text"
+                    className="form-control"
+                    placeholder="Rechercher ..."
+                    value={searchTerm}
+                    onChange={handleSearchChange}
+                  />
+                  {searchTerm && (
+                    <button
+                      className="btn btn-outline-secondary"
+                      type="button"
+                      onClick={handleClearSearch}
+                      title="Effacer la recherche"
+                    >
+                      <i className="bi bi-x-lg"></i>
+                    </button>
+                  )}
+                </div>
+              </div>
+              <div className="col-md-4 text-end">
+                {searchTerm && (
+                  <div className="mt-4">
+                    <span className="badge bg-info text-dark fs-6">
+                      {filteredPertes.length} résultat(s) trouvé(s)
+                    </span>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+      {/* PAGINATION TOP */}
+      <div className="container mt-3 pt-4">
+        <div className="row align-items-center mb-2">
+
+          {/* Bouton gauche */}
+          <div className="col-4 text-start">
+            <button
+              className="btn btn-outline-secondary btn-sm"
+              disabled={currentPage === 1}
+              onClick={() => setCurrentPage(p => p - 1)}
+            >
+              ⬅ Précédent
+            </button>
+          </div>
+
+          {/* Centre */}
+          <div className="col-4 text-center">
+            <span className="fw-bold">
+              Page {currentPage} / {totalPages || 1}
+            </span>
+          </div>
+
+          {/* Bouton droite */}
+          <div className="col-4 text-end">
+            <button
+              className="btn btn-outline-secondary btn-sm"
+              disabled={currentPage === totalPages}
+              onClick={() => setCurrentPage(p => p + 1)}
+            >
+              Suivant ➡
+            </button>
+          </div>
+
+        </div>
+      </div>
+
+      {/* TABLE */}
+      <div className="table-responsive shadow-sm">
+        <table className="table table-hover align-middle">
+          <thead className="bg-dark text-white">
+            <tr>
+              <th>#</th>
+              <th>Catégorie</th>
+              <th>Libellé</th>
+              <th>Produit perdue</th>
+              <th>Commentaire</th>
+              <th>Date</th>
+              <th className="text-center">Actions</th>
+            </tr>
+          </thead>
+
+          <tbody>
+            {paginatedPertes.length === 0 && (
+              <tr>
+                <td colSpan="6" className="text-center text-muted">
+                  Aucune perte trouvée
+                </td>
+              </tr>
+            )}
+
+            {paginatedPertes.map((perte, index) => (
+              <tr key={perte.id}>
+                <td className="fw-bold">
+                  {(currentPage - 1) * PER_PAGE + index + 1}
+                </td>
+                <td>
+                  <span className="badge bg-warning text-dark">
+                    {perte.article?.categorie}
+                  </span>
+                </td>
+                <td>{perte.article?.libelle}</td>
+                
+                <td className=" fw-bold">
+                  {perte.produit}
+                </td>
+                <td className="text-muted">
+                  {perte.commentaire || "—"}
+                </td>
+                <td>
+                  {new Date(perte.created_at).toLocaleString()}
+                </td>
+
+                <td className="text-center">
+                  <div className="btn-group btn-group-sm">
+                    <button
+                      className="btn btn-outline-primary"
+                      title="Modifier"
+                      onClick={() => handleEdit(perte)}
+                    >
+                      ✏️
+                    </button>
+
+
+                    <button
+                      className="btn btn-outline-danger"
+                      title="Supprimer"
+                      onClick={() => handleDelete(perte.id)}
+                    >
+                      🗑️
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+        </>
+      )}
+
+      {showEditModal && selectedPerte && (
+        <div
+          className="position-fixed top-0 start-0 w-100 h-100 d-flex align-items-center justify-content-center"
+          style={{
+            backgroundColor: "rgba(0,0,0,0.35)",
+            zIndex: 2000
+          }}
+        >
+          <div
+            className="bg-white rounded shadow"
+            style={{ width: "500px", maxWidth: "95%" }}
+          >
+
+            {/* HEADER */}
+            <div className="d-flex justify-content-between align-items-center px-3 py-2 bg-danger text-white rounded-top">
+              <h5 className="mb-0">✏️ Modifier la perte</h5>
+              <button
+                className="btn btn-sm btn-light"
+                onClick={() => setShowEditModal(false)}
+              >
+                ✖
+              </button>
+            </div>
+
+            {/* BODY */}
+            <div className="p-3">
+
+              <div className="mb-3">
+                <label className="form-label">Article</label>
+                <input
+                  className="form-control"
+                  value={selectedPerte.article?.libelle || ""}
+                  disabled
+                />
+              </div>
+
+              <div className="mb-3">
+                <label className="form-label">Service</label>
+                <input
+                  className="form-control"
+                  value={selectedPerte.article?.categorie || ""}
+                  disabled
+                />
+              </div>
+
+              <div className="mb-3">
+                <label className="form-label">Quantité perdue</label>
+                <input
+                  type="number"
+                  className="form-control"
+                  value={editForm.quantite}
+                  onChange={(e) =>
+                    setEditForm({ ...editForm, quantite: e.target.value })
+                  }
+                />
+              </div>
+
+              <div className="mb-3">
+                <label className="form-label">Commentaire</label>
+                <textarea
+                  className="form-control"
+                  rows="3"
+                  value={editForm.commentaire}
+                  onChange={(e) =>
+                    setEditForm({ ...editForm, commentaire: e.target.value })
+                  }
+                />
+              </div>
+            </div>
+
+            {/* FOOTER */}
+            <div className="d-flex justify-content-end gap-2 p-3 border-top">
+              <button
+                className="btn btn-secondary"
+                onClick={() => setShowEditModal(false)}
+              >
+                Annuler
+              </button>
+              <button
+                className="btn btn-primary"
+                onClick={handleUpdatePerte}
+              >
+                💾 Enregistrer
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+
+      {showDeleteModal && (
+        <div
+          className="modal fade show d-block"
+          style={{ backgroundColor: "rgba(0,0,0,0.5)" }}
+        >
+          <div className="modal-dialog modal-dialog-centered">
+            <div className="modal-content">
+
+              <div className="modal-header bg-danger text-white">
+                <h5 className="modal-title">Confirmation de suppression</h5>
+                <button
+                  className="btn-close"
+                  onClick={() => setShowDeleteModal(false)}
+                />
+              </div>
+
+              <div className="modal-body">
+                Voulez-vous vraiment supprimer cette perte ?
+              </div>
+
+              <div className="modal-footer">
+                <button
+                  className="btn btn-secondary"
+                  onClick={() => setShowDeleteModal(false)}
+                >
+                  Annuler
+                </button>
+
+                <button
+                  className="btn btn-danger"
+                  onClick={confirmDelete}
+                >
+                  Oui, supprimer
+                </button>
+              </div>
+
+            </div>
+          </div>
+        </div>
+      )}
+
+    </div>
+
+  )
+}
