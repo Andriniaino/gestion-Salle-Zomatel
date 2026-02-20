@@ -11,8 +11,8 @@ import {
 } from 'react-icons/fa';
 
 // ─── Constantes ───────────────────────────────────────────────────────────────
-const EMPTY_FORM   = { nom: '', prenoms: '', email: '', categorie: '' };
-const EMPTY_PWD    = { oldPassword: '', newPassword: '', confirmPassword: '' };
+const EMPTY_FORM = { nom: '', prenoms: '', email: '', categorie: '' };
+const EMPTY_PWD = { oldPassword: '', newPassword: '', confirmPassword: '' };
 const EMPTY_FORGOT = { newPassword: '', confirmPassword: '' };
 const EMPTY_CREATE = { nom: '', prenoms: '', email: '', password: '', confirmPassword: '', categorie: '' };
 
@@ -21,7 +21,7 @@ const Notif = ({ type, message, onClose }) => {
   if (!message) return null;
   const cfg = {
     success: { bg: '#d4edda', border: '#28a745', color: '#155724', icon: '✅' },
-    error:   { bg: '#f8d7da', border: '#dc3545', color: '#721c24', icon: '❌' },
+    error: { bg: '#f8d7da', border: '#dc3545', color: '#721c24', icon: '❌' },
   };
   const s = cfg[type] || cfg.error;
   return (
@@ -58,8 +58,8 @@ const PwdInput = ({ label, value, onChange, name, error, success }) => {
           {show ? <FaEyeSlash /> : <FaEye />}
         </button>
       </div>
-      {error   && <div className="invalid-feedback d-block" style={{ fontSize: 12 }}>{error}</div>}
-      {success && <div className="valid-feedback d-block"   style={{ fontSize: 12 }}>{success}</div>}
+      {error && <div className="invalid-feedback d-block" style={{ fontSize: 12 }}>{error}</div>}
+      {success && <div className="valid-feedback d-block" style={{ fontSize: 12 }}>{success}</div>}
     </div>
   );
 };
@@ -111,10 +111,10 @@ const DeleteConfirmModal = ({ user, onConfirm, onCancel, loading }) => {
 // ─── Badge catégorie ──────────────────────────────────────────────────────────
 const badgeClass = (cat) => {
   const m = {
-    admin:   'bg-danger',
+    admin: 'bg-danger',
     manager: 'bg-warning text-dark',
-    Resto:   'bg-info text-dark',
-    snack:   'bg-primary',
+    Resto: 'bg-info text-dark',
+    snack: 'bg-primary',
     detente: 'bg-success',
   };
   return `badge ${m[cat] || 'bg-secondary'}`;
@@ -127,23 +127,23 @@ const pwdMatch = (a, b) => a && b && a === b;
 // ─────────────────────────────────────────────────────────────────────────────
 const MonProfilPanel = ({ user, onClose, onSaved }) => {
   const { refreshUser } = useAuth();
-  const [editMode, setEditMode]   = useState(false);
-  const [formData, setFormData]   = useState({ nom: user.nom || '', prenoms: user.prenoms || '', email: user.email || '' });
-  const [errors,   setErrors]     = useState({});
-  const [notif,    setNotif]      = useState(null);
-  const [saving,   setSaving]     = useState(false);
+  const [editMode, setEditMode] = useState(false);
+  const [formData, setFormData] = useState({ nom: user.nom || '', prenoms: user.prenoms || '', email: user.email || '' });
+  const [errors, setErrors] = useState({});
+  const [notif, setNotif] = useState(null);
+  const [saving, setSaving] = useState(false);
   const [uploadingImage, setUploadingImage] = useState(false);
   const imageUrl = getUserImageUrl(user);
 
-  const [pwdOpen,   setPwdOpen]   = useState(false);
-  const [pwdData,   setPwdData]   = useState({ oldPassword: '', newPassword: '', confirmPassword: '' });
+  const [pwdOpen, setPwdOpen] = useState(false);
+  const [pwdData, setPwdData] = useState({ oldPassword: '', newPassword: '', confirmPassword: '' });
   const [pwdErrors, setPwdErrors] = useState({});
-  const [pwdLoading,setPwdLoading]= useState(false);
+  const [pwdLoading, setPwdLoading] = useState(false);
 
-  const [forgotOpen,   setForgotOpen]   = useState(false);
-  const [forgotData,   setForgotData]   = useState({ newPassword: '', confirmPassword: '' });
+  const [forgotOpen, setForgotOpen] = useState(false);
+  const [forgotData, setForgotData] = useState({ newPassword: '', confirmPassword: '' });
   const [forgotErrors, setForgotErrors] = useState({});
-  const [forgotLoading,setForgotLoading]= useState(false);
+  const [forgotLoading, setForgotLoading] = useState(false);
 
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -153,9 +153,9 @@ const MonProfilPanel = ({ user, onClose, onSaved }) => {
 
   const validateInfo = () => {
     const e = {};
-    if (!formData.nom.trim())    e.nom    = 'Le nom est requis';
-    if (!formData.prenoms.trim())e.prenoms= 'Les prénoms sont requis';
-    if (!formData.email.trim())  e.email  = "L'email est requis";
+    if (!formData.nom.trim()) e.nom = 'Le nom est requis';
+    if (!formData.prenoms.trim()) e.prenoms = 'Les prénoms sont requis';
+    if (!formData.email.trim()) e.email = "L'email est requis";
     else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email)) e.email = 'Email invalide';
     return e;
   };
@@ -368,12 +368,25 @@ const MonProfilPanel = ({ user, onClose, onSaved }) => {
                         </div>
                       </div>
                     </div>
-                    <div className="d-flex flex-wrap gap-2">
-                      <button className="btn btn-primary d-flex align-items-center gap-2"
-                        onClick={() => setEditMode(true)}>
-                        <FaEdit /> Modifier mes informations
-                      </button>
-                    </div>
+                    {/* ✅ Admin → bouton Modifier | Autres → lecture seule */}
+                    {user.categorie === 'admin' ? (
+                      <div className="d-flex flex-wrap gap-2">
+                        <button
+                          className="btn btn-primary d-flex align-items-center gap-2"
+                          onClick={() => setEditMode(true)}
+                        >
+                          <FaEdit /> Modifier mes informations
+                        </button>
+                      </div>
+                    ) : (
+                      <div
+                        className="alert alert-info py-2 px-3 mb-0 d-flex align-items-center gap-2"
+                        style={{ fontSize: 13 }}
+                      >
+                        <FaTag />
+                        Vos informations sont en lecture seule. Contactez un administrateur pour toute modification.
+                      </div>
+                    )}
                   </>
                 )}
 
@@ -520,7 +533,7 @@ const MonProfilPanel = ({ user, onClose, onSaved }) => {
 const ManageUsersModal = ({ show, onClose, showProfil = false }) => {
   const { user: currentUser } = useAuth();
 
-  const [users,   setUsers]   = useState([]);
+  const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(false);
 
   // panel : null | 'edit' | 'create' | 'profil'
@@ -529,28 +542,28 @@ const ManageUsersModal = ({ show, onClose, showProfil = false }) => {
   const [editUser, setEditUser] = useState(null);
   const [formData, setFormData] = useState(EMPTY_FORM);
 
-  const [createData,    setCreateData]    = useState(EMPTY_CREATE);
-  const [createErrors,  setCreateErrors]  = useState({});
-  const [createNotif,   setCreateNotif]   = useState(null);
+  const [createData, setCreateData] = useState(EMPTY_CREATE);
+  const [createErrors, setCreateErrors] = useState({});
+  const [createNotif, setCreateNotif] = useState(null);
   const [createLoading, setCreateLoading] = useState(false);
 
   // ✅ Nouveaux states pour l'image lors de la création
   const [createAvatarFile, setCreateAvatarFile] = useState(null);
-  const [createPreview,    setCreatePreview]    = useState(null);
+  const [createPreview, setCreatePreview] = useState(null);
 
-  const [deleteTarget,  setDeleteTarget]  = useState(null);
+  const [deleteTarget, setDeleteTarget] = useState(null);
   const [deleteLoading, setDeleteLoading] = useState(false);
 
-  const [pwdModal,   setPwdModal]   = useState(false);
-  const [pwdTarget,  setPwdTarget]  = useState(null);
-  const [pwdData,    setPwdData]    = useState(EMPTY_PWD);
-  const [pwdErrors,  setPwdErrors]  = useState({});
+  const [pwdModal, setPwdModal] = useState(false);
+  const [pwdTarget, setPwdTarget] = useState(null);
+  const [pwdData, setPwdData] = useState(EMPTY_PWD);
+  const [pwdErrors, setPwdErrors] = useState({});
   const [pwdLoading, setPwdLoading] = useState(false);
 
-  const [forgotModal,   setForgotModal]   = useState(false);
-  const [forgotTarget,  setForgotTarget]  = useState(null);
-  const [forgotData,    setForgotData]    = useState(EMPTY_FORGOT);
-  const [forgotErrors,  setForgotErrors]  = useState({});
+  const [forgotModal, setForgotModal] = useState(false);
+  const [forgotTarget, setForgotTarget] = useState(null);
+  const [forgotData, setForgotData] = useState(EMPTY_FORGOT);
+  const [forgotErrors, setForgotErrors] = useState({});
   const [forgotLoading, setForgotLoading] = useState(false);
 
   const [tableNotif, setTableNotif] = useState(null);
@@ -599,8 +612,8 @@ const ManageUsersModal = ({ show, onClose, showProfil = false }) => {
   if (!show) return null;
 
   // ── SUPPRESSION ──────────────────────────────────────────────────────────────
-  const handleDeleteClick   = (user) => setDeleteTarget(user);
-  const handleDeleteCancel  = () => setDeleteTarget(null);
+  const handleDeleteClick = (user) => setDeleteTarget(user);
+  const handleDeleteCancel = () => setDeleteTarget(null);
   const handleDeleteConfirm = async () => {
     setDeleteLoading(true);
     try {
@@ -617,7 +630,7 @@ const ManageUsersModal = ({ show, onClose, showProfil = false }) => {
     setCreateData(p => ({ ...p, [name]: value }));
     if (createErrors[name]) setCreateErrors(p => ({ ...p, [name]: '' }));
     if (name === 'password' || name === 'confirmPassword') {
-      const pwd  = name === 'password'        ? value : createData.password;
+      const pwd = name === 'password' ? value : createData.password;
       const conf = name === 'confirmPassword' ? value : createData.confirmPassword;
       if (conf && pwd !== conf) setCreateErrors(p => ({ ...p, confirmPassword: 'Les mots de passe ne correspondent pas' }));
       else setCreateErrors(p => ({ ...p, confirmPassword: '' }));
@@ -626,15 +639,15 @@ const ManageUsersModal = ({ show, onClose, showProfil = false }) => {
 
   const validateCreate = () => {
     const e = {};
-    if (!createData.nom.trim())     e.nom      = 'Le nom est requis';
-    if (!createData.prenoms.trim()) e.prenoms  = 'Les prénoms sont requis';
-    if (!createData.email.trim())   e.email    = "L'email est requis";
+    if (!createData.nom.trim()) e.nom = 'Le nom est requis';
+    if (!createData.prenoms.trim()) e.prenoms = 'Les prénoms sont requis';
+    if (!createData.email.trim()) e.email = "L'email est requis";
     else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(createData.email)) e.email = 'Email invalide';
-    if (!createData.password)       e.password = 'Le mot de passe est requis';
+    if (!createData.password) e.password = 'Le mot de passe est requis';
     else if (createData.password.length < 6) e.password = 'Minimum 6 caractères';
     if (!createData.confirmPassword) e.confirmPassword = 'Veuillez confirmer';
     else if (createData.password !== createData.confirmPassword) e.confirmPassword = 'Ne correspond pas';
-    if (!createData.categorie)      e.categorie = 'Sélectionner une catégorie';
+    if (!createData.categorie) e.categorie = 'Sélectionner une catégorie';
     return e;
   };
 
@@ -646,10 +659,10 @@ const ManageUsersModal = ({ show, onClose, showProfil = false }) => {
     try {
       // ✅ FormData pour envoyer texte + image ensemble en multipart
       const formPayload = new FormData();
-      formPayload.append('nom',       createData.nom.trim());
-      formPayload.append('prenoms',   createData.prenoms.trim());
-      formPayload.append('email',     createData.email.trim());
-      formPayload.append('password',  createData.password);
+      formPayload.append('nom', createData.nom.trim());
+      formPayload.append('prenoms', createData.prenoms.trim());
+      formPayload.append('email', createData.email.trim());
+      formPayload.append('password', createData.password);
       formPayload.append('categorie', createData.categorie);
       // ✅ Ajouter l'image seulement si elle existe
       if (createAvatarFile) {
@@ -705,7 +718,7 @@ const ManageUsersModal = ({ show, onClose, showProfil = false }) => {
   };
 
   // ── MOT DE PASSE ─────────────────────────────────────────────────────────────
-  const openPwdModal  = (u) => { setPwdTarget(u); setPwdData(EMPTY_PWD); setPwdErrors({}); setPwdModal(true); };
+  const openPwdModal = (u) => { setPwdTarget(u); setPwdData(EMPTY_PWD); setPwdErrors({}); setPwdModal(true); };
   const closePwdModal = () => { setPwdModal(false); setPwdTarget(null); setPwdData(EMPTY_PWD); setPwdErrors({}); };
   const validatePwd = () => {
     const e = {};
@@ -726,7 +739,7 @@ const ManageUsersModal = ({ show, onClose, showProfil = false }) => {
     finally { setPwdLoading(false); }
   };
 
-  const openForgotModal  = (u) => { setForgotTarget(u); setForgotData(EMPTY_FORGOT); setForgotErrors({}); setForgotModal(true); };
+  const openForgotModal = (u) => { setForgotTarget(u); setForgotData(EMPTY_FORGOT); setForgotErrors({}); setForgotModal(true); };
   const closeForgotModal = () => { setForgotModal(false); setForgotTarget(null); setForgotData(EMPTY_FORGOT); setForgotErrors({}); };
   const validateForgot = () => {
     const e = {};
@@ -753,17 +766,17 @@ const ManageUsersModal = ({ show, onClose, showProfil = false }) => {
         <div className="modal-dialog modal-xl modal-dialog-scrollable">
           <div className="modal-content shadow-lg">
 
-          <div className="modal-header text-white" style={{ backgroundColor: '#800020' }}>
-  <h5 className="modal-title d-flex align-items-center gap-2">
-    <FaUsers /> Gestion des utilisateurs
-  </h5>
+            <div className="modal-header text-white" style={{ backgroundColor: '#800020' }}>
+              <h5 className="modal-title d-flex align-items-center gap-2">
+                <FaUsers /> Gestion des utilisateurs
+              </h5>
 
-  <button
-    type="button"
-    className="btn-close btn-close-white"
-    onClick={handleClose}
-  />
-</div>
+              <button
+                type="button"
+                className="btn-close btn-close-white"
+                onClick={handleClose}
+              />
+            </div>
 
             <div className="modal-body p-4">
               <Notif type={tableNotif?.type} message={tableNotif?.message} onClose={() => setTableNotif(null)} />

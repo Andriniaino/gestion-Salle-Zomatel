@@ -9,9 +9,9 @@ return [
 
     // Permettre les origines spécifiques pour le développement et la production
     'allowed_origins' => [
-        'http://10.10.10.75:3000',
+        'http://locahost:3000',
         'http://localhost:3000',
-        env('FRONTEND_URL', 'http://10.10.10.75:3000'),
+        env('FRONTEND_URL', 'http://localhost:3000'),
     ],
 
     'allowed_origins_patterns' => [],
