@@ -1,14 +1,14 @@
 // frontend/src/components/Modal/CreerCompte.jsx
 
 import React, { useState } from "react";
-import { createUser } from "../../services/userService";
-import { FaEye, FaEyeSlash, FaUserPlus, FaTimes, FaCheck } from "react-icons/fa";
+import { createUser, uploadUserAvatar } from "../../services/userService";
+import { FaEye, FaEyeSlash, FaUserPlus, FaTimes, FaCheck, FaUserCircle } from "react-icons/fa";
 
 // ─── Valeur initiale ──────────────────────────────────────────────────────────
 const EMPTY_FORM = {
   nom: "",
   prenoms: "",
-  email: "",           // ← "email" (pas "mail") pour correspondre au backend
+  email: "",
   password: "",
   confirmPassword: "",
   categorie: "",
@@ -47,6 +47,10 @@ const CreerCompte = ({ showUserModal, setShowUserModal, onUserCreated }) => {
   const [loading,             setLoading]             = useState(false);
   const [notif,               setNotif]               = useState(null);
 
+  // ✅ States pour l'image
+  const [avatarFile,    setAvatarFile]    = useState(null);
+  const [avatarPreview, setAvatarPreview] = useState(null);
+
   if (!showUserModal) return null;
 
   // ── Fermeture propre ─────────────────────────────────────────────────────────
@@ -57,7 +61,35 @@ const CreerCompte = ({ showUserModal, setShowUserModal, onUserCreated }) => {
     setShowPassword(false);
     setShowConfirmPassword(false);
     setNotif(null);
+    setAvatarFile(null);    // ✅ reset image
+    setAvatarPreview(null); // ✅ reset preview
     setShowUserModal(false);
+  };
+
+  // ── Gestion de l'image ───────────────────────────────────────────────────────
+  const handleImageChange = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!file.type.startsWith("image/")) {
+      setNotif({ type: "error", message: "Veuillez sélectionner une image (JPG, PNG, GIF, WebP)" });
+      e.target.value = "";
+      return;
+    }
+    if (file.size > 2 * 1024 * 1024) {
+      setNotif({ type: "error", message: "L'image ne doit pas dépasser 2 Mo" });
+      e.target.value = "";
+      return;
+    }
+
+    setAvatarFile(file);
+    setAvatarPreview(URL.createObjectURL(file));
+    e.target.value = "";
+  };
+
+  const handleRemoveImage = () => {
+    setAvatarFile(null);
+    setAvatarPreview(null);
   };
 
   // ── Changement de champ ──────────────────────────────────────────────────────
@@ -66,7 +98,6 @@ const CreerCompte = ({ showUserModal, setShowUserModal, onUserCreated }) => {
     setFormData((prev) => ({ ...prev, [name]: value }));
     if (errors[name]) setErrors((prev) => ({ ...prev, [name]: "" }));
 
-    // Validation live confirmation mot de passe
     if (name === "confirmPassword" || name === "password") {
       const pwd     = name === "password"        ? value : formData.password;
       const confirm = name === "confirmPassword" ? value : formData.confirmPassword;
@@ -101,72 +132,74 @@ const CreerCompte = ({ showUserModal, setShowUserModal, onUserCreated }) => {
     e.preventDefault();
     e.stopPropagation();
     setNotif(null);
-
-    // 1. Validation locale
+  
     const validationErrors = validate();
     if (Object.keys(validationErrors).length > 0) {
       setErrors(validationErrors);
       return;
     }
-
+  
     setLoading(true);
-
+  
     try {
-      // 2. Payload — noms de champs identiques à ce qu'attend Laravel
-      const payload = {
-        nom:             formData.nom.trim(),
-        prenoms:         formData.prenoms.trim(),
-        email:           formData.email.trim(),   // ← "email" comme dans le controller
-        password:        formData.password,
-        confirmPassword: formData.confirmPassword, // ← envoyé pour la règle same:password
-        categorie:       formData.categorie,
-      };
-
-      const result = await createUser(payload);
-
+      // ✅ Utiliser FormData pour envoyer texte + image ensemble
+      const formPayload = new FormData();
+      formPayload.append("nom",       formData.nom.trim());
+      formPayload.append("prenoms",   formData.prenoms.trim());
+      formPayload.append("email",     formData.email.trim());
+      formPayload.append("password",  formData.password);
+      formPayload.append("categorie", formData.categorie);
+  
+      // ✅ Ajouter l'image seulement si elle existe
+      if (avatarFile) {
+        formPayload.append("image", avatarFile);
+      }
+  
+      const result = await createUser(formPayload); // ← FormData directement
+  
       if (result.success) {
-        // ✅ Succès
-        setNotif({ type: "success", message: result.message || "Compte créé avec succès !" });
+        setNotif({
+          type: "success",
+          message: result.message || "Compte créé avec succès !",
+        });
         setTimeout(() => {
           if (typeof onUserCreated === "function") onUserCreated();
           handleClose();
         }, 1800);
       } else {
-        // ❌ Erreur retournée par le service (422 ou autre)
-        // result.errors = objet Laravel { "email": ["..."], "nom": ["..."] }
         if (result.errors) {
-          // Mapper les erreurs Laravel vers les champs du formulaire
           const mapped = {};
           Object.entries(result.errors).forEach(([field, messages]) => {
             mapped[field] = Array.isArray(messages) ? messages[0] : messages;
           });
           setErrors(mapped);
-          setNotif({
-            type: "error",
-            message: "Veuillez corriger les erreurs dans le formulaire.",
-          });
+          const errorMessages = Object.values(mapped).join(" • ");
+          setNotif({ type: "error", message: errorMessages });
         } else {
-          setNotif({
-            type: "error",
-            message: result.message || "Erreur lors de la création du compte",
-          });
+          setNotif({ type: "error", message: result.message || "Erreur lors de la création" });
         }
         setLoading(false);
       }
+  
     } catch (err) {
-      setNotif({ type: "error", message: err.message || "Erreur réseau, veuillez réessayer" });
+      setNotif({ type: "error", message: err.message || "Erreur réseau" });
       setLoading(false);
     }
   };
 
   // ── Helpers ──────────────────────────────────────────────────────────────────
-  const inputClass = (field) =>
-    `form-control${errors[field] ? " is-invalid" : ""}`;
+  const inputClass = (field) => `form-control${errors[field] ? " is-invalid" : ""}`;
 
   const pwdMatch =
     formData.password &&
     formData.confirmPassword &&
     formData.password === formData.confirmPassword;
+
+  // Initiales pour l'aperçu avatar
+  const initiales =
+    formData.prenoms || formData.nom
+      ? `${(formData.prenoms || "").charAt(0)}${(formData.nom || "").charAt(0)}`.toUpperCase()
+      : null;
 
   // ─────────────────────────────────────────────────────────────────────────────
   return (
@@ -183,16 +216,74 @@ const CreerCompte = ({ showUserModal, setShowUserModal, onUserCreated }) => {
               onClick={handleClose} disabled={loading} />
           </div>
 
-          {/* FORM — englobe body + footer pour que type="submit" fonctionne */}
+          {/* FORM */}
           <form onSubmit={handleSubmit} noValidate>
             <div className="modal-body p-4">
 
-              {/* Message succès / erreur */}
+              {/* Notification */}
               <Notification
                 type={notif?.type}
                 message={notif?.message}
                 onClose={() => setNotif(null)}
               />
+
+              {/* ✅ PHOTO DE PROFIL — en haut avant le champ Nom */}
+              <div className="mb-4">
+                <label className="form-label fw-semibold">
+                  Photo de profil <span className="text-muted fw-normal">(optionnel)</span>
+                </label>
+                <div className="d-flex align-items-center gap-3">
+
+                  {/* Aperçu circulaire */}
+                  <div style={{
+                    width: 72, height: 72, borderRadius: "50%", flexShrink: 0,
+                    backgroundColor: "#e9ecef", overflow: "hidden",
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                    backgroundImage: avatarPreview ? `url(${avatarPreview})` : "none",
+                    backgroundSize: "cover", backgroundPosition: "center",
+                    border: "2px solid #dee2e6",
+                    fontSize: 22, fontWeight: 700, color: "#6c757d",
+                  }}>
+                    {!avatarPreview && (
+                      initiales
+                        ? initiales
+                        : <FaUserCircle style={{ fontSize: 36, color: "#adb5bd" }} />
+                    )}
+                  </div>
+
+                  {/* Bouton browse + infos */}
+                  <div className="d-flex flex-column gap-2">
+                    <label
+                      className="btn btn-outline-secondary btn-sm d-flex align-items-center gap-2 mb-0"
+                      style={{ cursor: loading ? "not-allowed" : "pointer", width: "fit-content" }}
+                    >
+                      <FaUserCircle /> Parcourir…
+                      <input
+                        type="file"
+                        accept="image/jpeg,image/png,image/gif,image/webp"
+                        className="d-none"
+                        disabled={loading}
+                        onChange={handleImageChange}
+                      />
+                    </label>
+
+                    <small className="text-muted">JPG, PNG, GIF, WebP — max 2 Mo</small>
+
+                    {/* Bouton supprimer l'image si sélectionnée */}
+                    {avatarPreview && (
+                      <button
+                        type="button"
+                        className="btn btn-sm btn-outline-danger d-flex align-items-center gap-1"
+                        style={{ width: "fit-content", fontSize: 12 }}
+                        onClick={handleRemoveImage}
+                        disabled={loading}
+                      >
+                        <FaTimes /> Supprimer la photo
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
 
               {/* Nom */}
               <div className="mb-3">
@@ -212,7 +303,7 @@ const CreerCompte = ({ showUserModal, setShowUserModal, onUserCreated }) => {
                 </label>
                 <input type="text" name="prenoms" className={inputClass("prenoms")}
                   value={formData.prenoms} onChange={handleChange}
-                  placeholder="Saisir votre preoms" disabled={loading} />
+                  placeholder="Saisir vos prénoms" disabled={loading} />
                 {errors.prenoms && <div className="invalid-feedback">{errors.prenoms}</div>}
               </div>
 
@@ -302,6 +393,7 @@ const CreerCompte = ({ showUserModal, setShowUserModal, onUserCreated }) => {
                   <div className="invalid-feedback">{errors.categorie}</div>
                 )}
               </div>
+
             </div>
 
             {/* FOOTER */}

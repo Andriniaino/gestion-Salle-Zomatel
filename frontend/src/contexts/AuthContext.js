@@ -30,12 +30,25 @@ export const AuthProvider = ({ children }) => {
     setUser(null);
   };
 
+  // Rafraîchir l'utilisateur connecté (après mise à jour profil/photo)
+  const refreshUser = async () => {
+    try {
+      const res = await api.get("/me");
+      setUser(res.data);
+      return res.data;
+    } catch {
+      return null;
+    }
+  };
+
   return (
     <AuthContext.Provider
       value={{
         user,
+        setUser,
         login,
         logout,
+        refreshUser,
         loading,
         isAuthenticated: !!user,
       }}

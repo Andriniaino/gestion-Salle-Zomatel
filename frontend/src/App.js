@@ -8,6 +8,7 @@ import CreateAccount from "./components/CreateAccount"
 import Notification from "./components/Pages/NotificationsPage"
 import Notifications from "./components/Pages/NotificationsPage"
 import PertesAdmin from "./components/Modal/PerteAdmin"
+import AdminHistoriquePage from "./components/AdminHistoriquePage"
 
 function App() {
   return (
@@ -17,6 +18,22 @@ function App() {
           <Routes>
             <Route path="/login" element={<Login />} />
             <Route path="/create-account" element={<CreateAccount />} />
+            <Route
+              path="/admin/historique"
+              element={
+                <ProtectedRoute requiredRole="admin">
+                  <AdminHistoriquePage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/admin/pertes"
+              element={
+                <ProtectedRoute requiredRole="admin">
+                  <PertesAdmin />
+                </ProtectedRoute>
+              }
+            />
             <Route
               path="/admin"
               element={
@@ -50,12 +67,6 @@ function App() {
               }
             />
             <Route path="/" element={<Navigate to="/login" replace />} />
-            <Route path="/admin/pertes" element={<PertesAdmin />} />
-            <Route path="/login" element={<Login />} />
-
-
-            <Route path="/admin" element={<AdminDashboard />} />
-            <Route path="/notifications" element={<Notifications />} />
           </Routes>
         </div>
       </Router>

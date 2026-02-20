@@ -5,16 +5,15 @@ import Zomatel from "../../images/zoma.jpeg"
 import { useNavigate, Link, useLocation } from "react-router-dom"
 import Notification from "../Notification"
 import ManageUsersModal from '../Modal/ManageUsersModal'
+import { getUserImageUrl } from "../../services/userService"
 import { FaSignOutAlt, FaTimes } from "react-icons/fa"
 
 // ─── Modale confirmation déconnexion ─────────────────────────────────────────
 const LogoutConfirmModal = ({ show, onConfirm, onCancel, loading, user }) => {
   if (!show) return null;
 
-  // Initiales pour l'avatar
-  const initiales = user
-    ? `${(user.prenoms || '').charAt(0)}${(user.nom || '').charAt(0)}`.toUpperCase()
-    : '?';
+  const initiales = user ? `${(user.prenoms || '').charAt(0)}${(user.nom || '').charAt(0)}`.toUpperCase() : '?';
+  const avatarUrl = user ? getUserImageUrl(user) : null;
 
   return (
     <div
@@ -30,16 +29,17 @@ const LogoutConfirmModal = ({ show, onConfirm, onCancel, loading, user }) => {
             padding: '28px 24px 20px',
             textAlign: 'center',
           }}>
-            {/* Avatar initiales */}
             <div style={{
               width: 64, height: 64, borderRadius: '50%',
-              backgroundColor: 'rgba(255,255,255,0.2)',
+              backgroundColor: avatarUrl ? 'transparent' : 'rgba(255,255,255,0.2)',
               border: '3px solid rgba(255,255,255,0.5)',
               margin: '0 auto 12px',
               display: 'flex', alignItems: 'center', justifyContent: 'center',
               fontSize: 22, fontWeight: 700, color: '#fff', letterSpacing: 1,
+              backgroundImage: avatarUrl ? `url(${avatarUrl})` : 'none',
+              backgroundSize: 'cover', backgroundPosition: 'center', overflow: 'hidden',
             }}>
-              {initiales}
+              {!avatarUrl && initiales}
             </div>
             {user && (
               <div style={{ color: 'rgba(255,255,255,0.9)', fontSize: 14, fontWeight: 500 }}>
@@ -122,8 +122,9 @@ const Header = ({ setShowUserModal, showWeekView, setShowWeekView, handleCategor
   const openGestion = () => { setOpenWithProfil(false); setShowManageUsersModal(true) }
   const openProfil  = () => { setOpenWithProfil(true);  setShowManageUsersModal(true) }
 
-  const handleDashboard = () => { setShowWeekView(false); navigate("/admin") }
-  const handlePertes    = () => { navigate("/admin/pertes") }
+  const handleDashboard  = () => { if (typeof setShowWeekView === "function") setShowWeekView(false); navigate("/admin") }
+  const handleHistorique = () => { navigate("/admin/historique") }
+  const handlePertes     = () => { navigate("/admin/pertes") }
 
   const [activeServiceFilter, setActiveServiceFilter] = useState(serviceFilter || "all")
 
@@ -206,7 +207,7 @@ const Header = ({ setShowUserModal, showWeekView, setShowWeekView, handleCategor
                 <a className="nav-link dropdown-toggle" href="#" role="button"
                   data-bs-toggle="dropdown" aria-expanded="false">
                   <i className="bi bi-layout-text-sidebar-reverse me-1"></i>
-                  Vue : {showWeekView ? "Historique" : "Dashboard"}
+                  Vue : {location.pathname === "/admin/historique" ? "Historique" : location.pathname === "/admin/pertes" ? "Pertes" : "Dashboard"}
                 </a>
                 <ul className="dropdown-menu">
                   <li>
@@ -216,8 +217,8 @@ const Header = ({ setShowUserModal, showWeekView, setShowWeekView, handleCategor
                     </button>
                   </li>
                   <li>
-                    <button className={`dropdown-item ${showWeekView ? "active" : ""}`}
-                      onClick={() => handleSetView(true)}>
+                    <button className={`dropdown-item ${location.pathname === "/admin/historique" ? "active" : ""}`}
+                      onClick={handleHistorique}>
                       <i className="bi bi-calendar-week me-2"></i>Historique
                     </button>
                   </li>
@@ -272,8 +273,16 @@ const Header = ({ setShowUserModal, showWeekView, setShowWeekView, handleCategor
               <li className="nav-item dropdown">
                 <a className="nav-link dropdown-toggle d-flex align-items-center" href="#"
                   role="button" data-bs-toggle="dropdown" aria-expanded="false">
-                  <i className="bi bi-person-circle fs-5 me-2"></i>
-                  <span className="d-none d-md-inline">
+                  <div style={{
+                    width: 32, height: 32, borderRadius: '50%', overflow: 'hidden',
+                    backgroundColor: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    backgroundImage: user ? getUserImageUrl(user) ? `url(${getUserImageUrl(user)})` : 'none' : 'none',
+                    backgroundSize: 'cover', backgroundPosition: 'center',
+                    fontSize: 12, fontWeight: 600, color: '#800020',
+                  }}>
+                    {user && !getUserImageUrl(user) && `${(user.prenoms || '').charAt(0)}${(user.nom || '').charAt(0)}`.toUpperCase()}
+                  </div>
+                  <span className="ms-2 d-none d-md-inline">
                     {user ? `${user.prenoms} ${user.nom}` : "Non connecté"}
                   </span>
                 </a>

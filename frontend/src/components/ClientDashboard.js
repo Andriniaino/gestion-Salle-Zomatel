@@ -7,6 +7,8 @@ import api from "../services/api"
 import Footer from "../components/Footer"
 import AjoutClient from "./Modal/AjoutClient"
 import ModalPertes from "./Modal/ModalPertes"
+import ManageUsersModal from "./Modal/ManageUsersModal"
+import { getUserImageUrl } from "../services/userService"
 import zomatel from "../images/zoma.jpeg"
 
 
@@ -26,6 +28,7 @@ const ClientDashboard = () => {
   const [currentPage, setCurrentPage] = useState(1)
   const itemsPerPage = 10
   const [showPerteModal, setShowPerteModal] = useState(false)
+  const [showProfilModal, setShowProfilModal] = useState(false)
 
   useEffect(() => {
     fetchArticles()
@@ -217,6 +220,15 @@ const ClientDashboard = () => {
 
           {/* Bienvenue + Menu dropdown */}
           <div className="d-flex align-items-center gap-3">
+            <div style={{
+              width: 36, height: 36, borderRadius: '50%', overflow: 'hidden',
+              backgroundColor: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center',
+              backgroundImage: getUserImageUrl(user) ? `url(${getUserImageUrl(user)})` : 'none',
+              backgroundSize: 'cover', backgroundPosition: 'center',
+              fontSize: 14, fontWeight: 600, color: '#800020',
+            }}>
+              {!getUserImageUrl(user) && `${(user.prenoms || '').charAt(0)}${(user.nom || '').charAt(0)}`.toUpperCase()}
+            </div>
             <span className="navbar-text text-white">
               Bienvenue, {user.prenoms} {user.nom}
             </span>
@@ -235,8 +247,7 @@ const ClientDashboard = () => {
                 <li>
                   <button
                     className="dropdown-item"
-                    data-bs-toggle="modal"
-                    data-bs-target="#profilModal"
+                    onClick={() => setShowProfilModal(true)}
                   >
                     <i className="bi bi-person-circle me-2"></i> Mon Profil
                   </button>
@@ -415,48 +426,12 @@ const ClientDashboard = () => {
           MODALS — tous placés ici, en dehors de la navbar
       ============================================================ */}
 
-      {/* Modal Mon Profil */}
-      <div className="modal fade" id="profilModal" tabIndex="-1" aria-labelledby="profilModalLabel" aria-hidden="true">
-        <div className="modal-dialog modal-dialog-centered">
-          <div className="modal-content">
-            <div className="modal-header" style={{ backgroundColor: "#800020" }}>
-              <h5 className="modal-title text-white" id="profilModalLabel">
-                <i className="bi bi-person-circle me-2"></i> Mon Profil
-              </h5>
-              <button type="button" className="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
-            </div>
-            <div className="modal-body">
-              <div className="d-flex align-items-center mb-3">
-                <div
-                  className="rounded-circle d-flex align-items-center justify-content-center me-3"
-                  style={{ width: 60, height: 60, backgroundColor: "#800020" }}
-                >
-                  <i className="bi bi-person-fill text-white fs-2"></i>
-                </div>
-                <div>
-                  <h6 className="mb-0 fw-bold">{user?.prenoms} {user?.nom}</h6>
-                  <small className="text-muted">{user?.email ?? "—"}</small>
-                </div>
-              </div>
-              <hr />
-              <div className="row g-2">
-                <div className="col-5 text-muted fw-semibold">Nom d'utilisateur</div>
-                <div className="col-7">{user?.nom ?? "—"}</div>
-
-                <div className="col-5 text-muted fw-semibold">Rôle</div>
-                <div className="col-7">
-                  <span className="badge" style={{ backgroundColor: "#800020" }}>{user?.role ?? "Utilisateur Simples"}</span>
-                </div>
-
-                <div className="col-5 text-muted fw-semibold">Catégorie</div>
-                <div className="col-7">{user?.categorie ?? "—"}</div>
-
-              </div>
-            </div>
-            
-          </div>
-        </div>
-      </div>
+      {/* Modal Mon Profil (ManageUsersModal avec panneau profil) */}
+      <ManageUsersModal
+        show={showProfilModal}
+        onClose={() => setShowProfilModal(false)}
+        showProfil={true}
+      />
 
       {/* Modal Confirmation Déconnexion */}
       <div className="modal fade" id="logoutModal" tabIndex="-1" aria-labelledby="logoutModalLabel" aria-hidden="true">

@@ -7,7 +7,6 @@ import Footer from "../components/Footer"
 import AjoutModal from "../components/Modal/AjoutModal"
 import CreerCompte from "./Modal/CreerCompte"
 import Resume from "./Resume"
-import WeekView from "./WeekView"
 import ExportExel from "../components/ExportExel"
 import api from "../services/api";
 import ArticleImport from "./ArticleImport";
@@ -24,7 +23,6 @@ const AdminDashboard = () => {
   };
 
   // --- vues/modal ---
-  const [showWeekView, setShowWeekView] = useState(false)
   const [showUserModal, setShowUserModal] = useState(false)
 
   // --- utilisateur modal state ---
@@ -403,13 +401,10 @@ const AdminDashboard = () => {
           <div className="container-fluid">
             <Header
               setShowUserModal={setShowUserModal}
-              showWeekView={showWeekView}
-              setShowWeekView={setShowWeekView}
               handleCategoryFilter={handleCategoryFilter}
             />
 
-            {!showWeekView ? (
-              <>
+            <>
                 <div className="container mt-5 pt-3"></div>
 
                 <ArticleImport
@@ -615,10 +610,7 @@ const AdminDashboard = () => {
                 )}
 
                 <Resume articles={articles} />
-              </>
-            ) : (
-              <WeekView onBack={() => setShowWeekView(false)} selectedCategory={selectedCategory} />
-            )}
+            </>
 
             <Footer />
           </div>

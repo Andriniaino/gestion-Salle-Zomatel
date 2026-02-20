@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from "react"
 import axios from "axios"
 import Header from "./Header"
-import WeekView from "../WeekView"
 
 const PER_PAGE = 10
 
@@ -11,7 +10,6 @@ export default function PerteAdmin() {
 
   const [serviceFilter, setServiceFilter] = useState("all")
   const [currentPage, setCurrentPage] = useState(1)
-  const [showWeekView, setShowWeekView] = useState(false)
   const [searchTerm, setSearchTerm] = useState("")
 
 
@@ -218,21 +216,10 @@ export default function PerteAdmin() {
 
 
       <Header
-        showWeekView={showWeekView}
-        setShowWeekView={setShowWeekView}
         handleCategoryFilter={handleServiceFilter}
         serviceFilter={serviceFilter}
       />
 
-      {showWeekView ? (
-        <div className="mt-5 pt-4">
-          <WeekView
-            onBack={() => setShowWeekView(false)}
-            selectedCategory={serviceFilter === "all" ? "" : serviceFilter}
-          />
-        </div>
-      ) : (
-        <>
       <div className="text-center" style={{ marginTop: "2cm" }}>
         <h4 className="mb-3 text-danger fw-bold">
           📉 Gestion des pertes
@@ -435,8 +422,6 @@ export default function PerteAdmin() {
           </tbody>
         </table>
       </div>
-        </>
-      )}
 
       {showEditModal && selectedPerte && (
         <div
