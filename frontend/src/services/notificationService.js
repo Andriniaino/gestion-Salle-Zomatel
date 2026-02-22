@@ -117,3 +117,21 @@ export const backupAndDeleteNotifications = async () => {
     };
   }
 };
+
+
+
+export const markNotificationAsRead = async (notificationId) => {
+  try {
+    const response = await api.patch(`/notifications/${notificationId}/read`)
+    return {
+      success: true,
+      data: response.data?.data ?? response.data,
+    }
+  } catch (error) {
+    console.error("❌ Erreur markNotificationAsRead:", error)
+    return {
+      success: false,
+      error: error.response?.data?.message ?? error.message,
+    }
+  }
+}

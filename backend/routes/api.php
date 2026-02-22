@@ -1,6 +1,7 @@
 <?php
 
 use Illuminate\Support\Facades\Route;
+use Illuminate\Http\Request;
 use App\Http\Controllers\Api\UserController;
 use App\Http\Controllers\Api\ArticleController;
 use App\Http\Controllers\Api\ArticleWeekController;
@@ -10,27 +11,35 @@ use App\Http\Controllers\Api\PerteController;
 use App\Http\Controllers\Api\PerteExportController;
 use App\Http\Controllers\Api\ArticleImportController;
 
+/*
+|--------------------------------------------------------------------------
+| API Routes
+|--------------------------------------------------------------------------
+*/
 
+// Users
+Route::get('/users', [UserController::class, 'index']);
+Route::get('/users/{id}', [UserController::class, 'show']);
+Route::post('/users', [UserController::class, 'store']);
+Route::put('/users/{id}', [UserController::class, 'update']);
+Route::post('/users/{id}/avatar', [UserController::class, 'uploadAvatar']);
+Route::delete('/users/{id}', [UserController::class, 'destroy']);
+Route::apiResource('users', UserController::class);
 
+// Auth
+Route::post('login', [AuthController::class, 'login']);
+Route::post('logout', [AuthController::class, 'logout']);
 
+// ✅ /me secured avec AuthController (Laravel Sanctum)
+Route::middleware('auth:sanctum')->get('/me', [AuthController::class, 'me']);
 
-    Route::get('/users', [UserController::class, 'index']);
-    Route::get('/users/{id}', [UserController::class, 'show']);
-    Route::post('/users', [UserController::class, 'store']);
-    Route::put('/users/{id}', [UserController::class, 'update']);
-    Route::post('/users/{id}/avatar', [UserController::class, 'uploadAvatar']);
-    Route::delete('/users/{id}', [UserController::class, 'destroy']);
-    Route::apiResource('users', UserController::class);
-    Route::post('login', [AuthController::class, 'login']);
-    Route::post('logout', [AuthController::class, 'logout']);
-    Route::get('me', [AuthController::class, 'me']);
-    Route::post('auth/register', [UserController::class, 'store']); // Alias pour /api/auth/register
+// ✅ /me secured (JWT alternative si besoin)
+Route::middleware('auth:api')->get('/me', [AuthController::class, 'me']);
 
+// Alias pour /api/auth/register
+Route::post('auth/register', [UserController::class, 'store']);
 
-
-
-
-// Routes pour Article
+// Articles
 Route::prefix('articles')->group(function () {
     Route::get('/', [ArticleController::class, 'indexArticle']);
     Route::get('export/excel', [ArticleController::class, 'exportExcel']);
@@ -41,12 +50,9 @@ Route::prefix('articles')->group(function () {
     Route::delete('{id}', [ArticleController::class, 'destroy']);
     Route::get('/template', [ArticleImportController::class, 'downloadTemplate']);
     Route::post('/import', [ArticleImportController::class, 'importFile']);
-
-    
-   // Route::get('/', [ArticleImportController::class, 'index']);
 });
 
-// Routes pour ArticleWeek
+// ArticleWeeks
 Route::prefix('articleweeks')->group(function () {
     Route::get('/', [ArticleWeekController::class, 'index']);
     Route::get('{id}', [ArticleWeekController::class, 'show']);
@@ -57,26 +63,22 @@ Route::prefix('articleweeks')->group(function () {
     Route::delete('{id}', [ArticleWeekController::class, 'destroy']);
 });
 
-
-// Routes pour notification
+// Notifications
 Route::prefix('notifications')->group(function () {
     Route::get('/', [NotificationController::class, 'index']);
     Route::get('/unread', [NotificationController::class, 'unread']);
     Route::get('{id}', [NotificationController::class, 'show']);
     Route::post('/', [NotificationController::class, 'store']);
     Route::put('{id}', [NotificationController::class, 'update']);
+    Route::patch('{id}/read', [NotificationController::class, 'markAsRead']);
     Route::delete('/backup-delete', [NotificationController::class, 'backupAndDeleteAll']);
-
-
 });
-    //pertess Cient
-    Route::get('/pertes/search', [PerteController::class, 'search']);
-    Route::post('/pertes', [PerteController::class, 'store']);
 
-    Route::get('/pertes', [PerteController::class, 'index']);
-    Route::put('/pertes/{id}', [PerteController::class, 'update']);
-    Route::delete('/pertes/{id}', [PerteController::class, 'destroy']);
-    Route::get('/pertes/export', [PerteExportController::class, 'export']);
-    Route::get('/pertes/{id}', [PerteController::class, 'show']);
-
-
+// Pertes
+Route::get('/pertes/search', [PerteController::class, 'search']);
+Route::post('/pertes', [PerteController::class, 'store']);
+Route::get('/pertes', [PerteController::class, 'index']);
+Route::put('/pertes/{id}', [PerteController::class, 'update']);
+Route::delete('/pertes/{id}', [PerteController::class, 'destroy']);
+Route::get('/pertes/export', [PerteExportController::class, 'export']);
+Route::get('/pertes/{id}', [PerteController::class, 'show']);

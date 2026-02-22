@@ -3,7 +3,12 @@ import { Navigate } from "react-router-dom"
 import { useAuth } from "../contexts/AuthContext"
 
 const ProtectedRoute = ({ children, requiredRole }) => {
-  const { isAuthenticated, user } = useAuth()
+  const { isAuthenticated, user, loading } = useAuth()
+
+  // Au refresh, on attend la vérification /me avant de décider de rediriger.
+  if (loading) {
+    return null
+  }
 
   if (!isAuthenticated) {
     return <Navigate to="/login" replace />

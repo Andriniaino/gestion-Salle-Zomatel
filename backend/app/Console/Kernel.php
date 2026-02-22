@@ -12,7 +12,10 @@ class Kernel extends ConsoleKernel
      */
     protected function schedule(Schedule $schedule): void
     {
-        // $schedule->command('inspire')->hourly();
+        // Chaque dimanche à 23h59 : copie article → articleweek puis remet produit à 0
+        $schedule->command('articles:weekly-backup')
+            ->weeklyOn(0, '23:59')
+            ->timezone(config('app.timezone', 'UTC'));
     }
 
     /**

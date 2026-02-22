@@ -128,7 +128,28 @@ class NotificationController extends Controller
         ]);
     }
 
-    // Marquer comme lue / mise à jour
+    // Marquer comme lue (PATCH /notifications/{id}/read)
+    public function markAsRead($id)
+    {
+        $notification = Notification::find($id);
+
+        if (!$notification) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Notification non trouvée'
+            ], 404);
+        }
+
+        $notification->update(['lu' => true]);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Notification marquée comme lue',
+            'data' => $notification->fresh()
+        ]);
+    }
+
+    // Marquer comme lue / mise à jour (PUT)
     public function update(Request $request, $id)
     {
         $notification = Notification::find($id);
