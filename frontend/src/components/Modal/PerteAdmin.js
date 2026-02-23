@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react"
-import axios from "axios"
+import api from "../../services/api" // 👈 import de votre instance centralisée
 import Header from "./Header"
 
 const PER_PAGE = 10
@@ -22,14 +22,13 @@ export default function PerteAdmin() {
     commentaire: "",
   })
 
-  // 🔔 Notification toast
-  const [successMessage, setSuccessMessage] = useState(null) // "edit" | "delete" | null
+  const [successMessage, setSuccessMessage] = useState(null)
 
   /* =========================
      FETCH
   ========================= */
   useEffect(() => {
-    axios.get("http://localhost:8000/api/pertes")
+    api.get("/pertes")                          // ✅ était : axios.get("http://192.168.7.162:8000/api/pertes")
       .then(res => {
         setPertes(res.data.data || [])
         setLoading(false)
@@ -37,16 +36,17 @@ export default function PerteAdmin() {
       .catch(() => setLoading(false))
   }, [])
 
-  const API_BASE = "http://127.0.0.1:8000"
-
+  /* =========================
+     EXPORT
+  ========================= */
   const exportPertes = async (categorie) => {
     try {
-      let url = `${API_BASE}/api/pertes/export`
+      let url = "/pertes/export"              // ✅ était : `${API_BASE}/api/pertes/export`
       if (categorie && categorie !== "tous") {
         url += `?categorie=${encodeURIComponent(categorie)}`
       }
 
-      const response = await axios.get(url, { responseType: "blob" })
+      const response = await api.get(url, { responseType: "blob" })  // ✅
 
       const blob = new Blob([response.data], {
         type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -69,7 +69,7 @@ export default function PerteAdmin() {
   }
 
   /* =========================
-     FILTRAGE SERVICE + RECHERCHE GLOBALE
+     FILTRAGE + RECHERCHE
   ========================= */
   const filteredPertes = useMemo(() => {
     let filtered = pertes
@@ -154,11 +154,10 @@ export default function PerteAdmin() {
 
   const confirmDelete = async () => {
     try {
-      await axios.delete(`http://localhost:8000/api/pertes/${perteToDelete}`)
+      await api.delete(`/pertes/${perteToDelete}`)   // ✅ était : axios.delete("http://localhost:8000/api/pertes/...")
       setPertes(prev => prev.filter(p => p.id !== perteToDelete))
       setShowDeleteModal(false)
       setPerteToDelete(null)
-      // ✅ Toast suppression
       showToast("delete")
     } catch (error) {
       console.error(error)
@@ -180,7 +179,7 @@ export default function PerteAdmin() {
 
   const handleUpdatePerte = async () => {
     try {
-      await axios.put(`http://localhost:8000/api/pertes/${selectedPerte.id}`, {
+      await api.put(`/pertes/${selectedPerte.id}`, {   // ✅ était : axios.put("http://localhost:8000/api/pertes/...")
         produit: editForm.quantite,
         commentaire: editForm.commentaire,
       })
@@ -195,7 +194,6 @@ export default function PerteAdmin() {
 
       setShowEditModal(false)
       setSelectedPerte(null)
-      // ✅ Toast modification
       showToast("edit")
     } catch (error) {
       alert("Erreur lors de la modification")
@@ -209,7 +207,6 @@ export default function PerteAdmin() {
   return (
     <div className="container-fluid mt-4">
 
-      {/* HEADER */}
       <Header
         handleCategoryFilter={handleServiceFilter}
         serviceFilter={serviceFilter}
@@ -223,7 +220,6 @@ export default function PerteAdmin() {
 
       <div className="d-flex justify-content-between align-items-center mb-3">
 
-        {/* Bouton Exporter */}
         <div>
           <button className="btn btn-success dropdown-toggle" data-bs-toggle="dropdown">
             📤 Exporter
@@ -241,7 +237,6 @@ export default function PerteAdmin() {
           </ul>
         </div>
 
-        {/* Barre de recherche */}
         <div style={{ width: "60%" }}>
           <div className="mb-4 mb-0">
             <div className="row align-items-center">
@@ -330,7 +325,7 @@ export default function PerteAdmin() {
           <tbody>
             {paginatedPertes.length === 0 && (
               <tr>
-                <td colSpan="6" className="text-center text-muted">
+                <td colSpan="7" className="text-center text-muted">
                   Aucune perte trouvée
                 </td>
               </tr>
@@ -373,43 +368,25 @@ export default function PerteAdmin() {
         </table>
       </div>
 
-      {/* ============================
-          MODAL MODIFICATION
-      ============================ */}
+      {/* MODAL MODIFICATION */}
       {showEditModal && selectedPerte && (
         <div
           className="position-fixed top-0 start-0 w-100 h-100 d-flex align-items-center justify-content-center"
           style={{ backgroundColor: "rgba(0,0,0,0.35)", zIndex: 2000 }}
         >
-          <div
-            className="bg-white rounded shadow"
-            style={{ width: "500px", maxWidth: "95%" }}
-          >
+          <div className="bg-white rounded shadow" style={{ width: "500px", maxWidth: "95%" }}>
             <div className="d-flex justify-content-between align-items-center px-3 py-2 bg-danger text-white rounded-top">
               <h5 className="mb-0">✏️ Modifier la perte</h5>
-              <button
-                className="btn btn-sm btn-light"
-                onClick={() => setShowEditModal(false)}
-              >
-                ✖
-              </button>
+              <button className="btn btn-sm btn-light" onClick={() => setShowEditModal(false)}>✖</button>
             </div>
             <div className="p-3">
               <div className="mb-3">
                 <label className="form-label">Article</label>
-                <input
-                  className="form-control"
-                  value={selectedPerte.article?.libelle || ""}
-                  disabled
-                />
+                <input className="form-control" value={selectedPerte.article?.libelle || ""} disabled />
               </div>
               <div className="mb-3">
                 <label className="form-label">Service</label>
-                <input
-                  className="form-control"
-                  value={selectedPerte.article?.categorie || ""}
-                  disabled
-                />
+                <input className="form-control" value={selectedPerte.article?.categorie || ""} disabled />
               </div>
               <div className="mb-3">
                 <label className="form-label">Quantité perdue</label>
@@ -417,9 +394,7 @@ export default function PerteAdmin() {
                   type="number"
                   className="form-control"
                   value={editForm.quantite}
-                  onChange={(e) =>
-                    setEditForm({ ...editForm, quantite: e.target.value })
-                  }
+                  onChange={(e) => setEditForm({ ...editForm, quantite: e.target.value })}
                 />
               </div>
               <div className="mb-3">
@@ -428,72 +403,40 @@ export default function PerteAdmin() {
                   className="form-control"
                   rows="3"
                   value={editForm.commentaire}
-                  onChange={(e) =>
-                    setEditForm({ ...editForm, commentaire: e.target.value })
-                  }
+                  onChange={(e) => setEditForm({ ...editForm, commentaire: e.target.value })}
                 />
               </div>
             </div>
             <div className="d-flex justify-content-end gap-2 p-3 border-top">
-              <button
-                className="btn btn-secondary"
-                onClick={() => setShowEditModal(false)}
-              >
-                Annuler
-              </button>
-              <button
-                className="btn btn-primary"
-                onClick={handleUpdatePerte}
-              >
-                💾 Enregistrer
-              </button>
+              <button className="btn btn-secondary" onClick={() => setShowEditModal(false)}>Annuler</button>
+              <button className="btn btn-primary" onClick={handleUpdatePerte}>💾 Enregistrer</button>
             </div>
           </div>
         </div>
       )}
 
-      {/* ============================
-          MODAL SUPPRESSION
-      ============================ */}
+      {/* MODAL SUPPRESSION */}
       {showDeleteModal && (
-        <div
-          className="modal fade show d-block"
-          style={{ backgroundColor: "rgba(0,0,0,0.5)" }}
-        >
+        <div className="modal fade show d-block" style={{ backgroundColor: "rgba(0,0,0,0.5)" }}>
           <div className="modal-dialog modal-dialog-centered">
             <div className="modal-content">
               <div className="modal-header bg-danger text-white">
                 <h5 className="modal-title">Confirmation de suppression</h5>
-                <button
-                  className="btn-close"
-                  onClick={() => setShowDeleteModal(false)}
-                />
+                <button className="btn-close" onClick={() => setShowDeleteModal(false)} />
               </div>
               <div className="modal-body">
                 Voulez-vous vraiment supprimer cette perte ?
               </div>
               <div className="modal-footer">
-                <button
-                  className="btn btn-secondary"
-                  onClick={() => setShowDeleteModal(false)}
-                >
-                  Annuler
-                </button>
-                <button
-                  className="btn btn-danger"
-                  onClick={confirmDelete}
-                >
-                  Oui, supprimer
-                </button>
+                <button className="btn btn-secondary" onClick={() => setShowDeleteModal(false)}>Annuler</button>
+                <button className="btn btn-danger" onClick={confirmDelete}>Oui, supprimer</button>
               </div>
             </div>
           </div>
         </div>
       )}
 
-      {/* ============================
-          TOAST NOTIFICATION (2s)
-      ============================ */}
+      {/* TOAST NOTIFICATION */}
       {successMessage && (
         <div
           className="position-fixed top-0 start-50 translate-middle-x mt-4"
@@ -503,19 +446,14 @@ export default function PerteAdmin() {
             className={`alert shadow-lg d-flex align-items-center gap-3 px-4 py-3 rounded-3 border-0 ${
               successMessage === "edit" ? "alert-success" : "alert-danger"
             }`}
-            style={{
-              animation: "fadeSlideIn 0.35s ease",
-              fontSize: "1rem",
-            }}
+            style={{ animation: "fadeSlideIn 0.35s ease", fontSize: "1rem" }}
           >
             <span style={{ fontSize: "1.6rem" }}>
               {successMessage === "edit" ? "✅" : "🗑️"}
             </span>
             <div>
               <strong>
-                {successMessage === "edit"
-                  ? "Modification réussie !"
-                  : "Suppression réussie !"}
+                {successMessage === "edit" ? "Modification réussie !" : "Suppression réussie !"}
               </strong>
               <div style={{ fontSize: "0.85rem", opacity: 0.85 }}>
                 {successMessage === "edit"
@@ -524,8 +462,6 @@ export default function PerteAdmin() {
               </div>
             </div>
           </div>
-
-          {/* CSS animation inline pour éviter un fichier séparé */}
           <style>{`
             @keyframes fadeSlideIn {
               from { opacity: 0; transform: translateY(-20px); }

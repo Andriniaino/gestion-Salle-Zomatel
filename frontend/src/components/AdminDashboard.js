@@ -15,10 +15,6 @@ const AdminDashboard = () => {
   const [showImport, setShowImport] = useState(false);
   const { toast, showToast, clearToast } = useToast();
 
-  const handleImportSuccess = () => {
-    fetchArticles();
-  };
-
   const [showUserModal, setShowUserModal] = useState(false)
 
   const [formDataUser, setFormDataUser] = useState({
