@@ -283,7 +283,7 @@ const Header = ({ setShowUserModal, showWeekView, setShowWeekView, handleCategor
                     {user && !getUserImageUrl(user) && `${(user.prenoms || '').charAt(0)}${(user.nom || '').charAt(0)}`.toUpperCase()}
                   </div>
                   <span className="ms-2 d-none d-md-inline">
-                    {user ? `${user.prenoms} ${user.nom}` : "Non connecté"}
+                    {user ? ` ${user.prenoms}` : "Non connecté"}
                   </span>
                 </a>
                 <ul className="dropdown-menu dropdown-menu-end shadow">
@@ -291,7 +291,7 @@ const Header = ({ setShowUserModal, showWeekView, setShowWeekView, handleCategor
                   {/* Infos utilisateur */}
                   {user && (
                     <li className="px-3 py-2 border-bottom">
-                      <div className="fw-bold">{user.prenoms} {user.nom}</div>
+                      <div className="fw-bold">{user.nom} {/*{user.prenoms}*/}</div>
                       <small className="text-muted text-capitalize">{user.categorie}</small>
                     </li>
                   )}

@@ -212,7 +212,7 @@ export default function PerteAdmin() {
         serviceFilter={serviceFilter}
       />
 
-      <div className="text-center" style={{ marginTop: "2cm" }}>
+      <div className="text-center" style={{ marginTop: "2.5cm" }}>
         <h4 className="mb-3 text-danger fw-bold">
           📉 Gestion des pertes
         </h4>

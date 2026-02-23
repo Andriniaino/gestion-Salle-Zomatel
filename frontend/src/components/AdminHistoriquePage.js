@@ -40,14 +40,16 @@ const AdminHistoriquePage = () => {
 
               {/* ── Titre de la page ── */}
               <div className="d-flex align-items-center justify-content-between mb-4 flex-wrap gap-2">
-                <div>
-                  <h2 className="fw-bold mb-0" style={{ color: "#800020" }}>
-                    <i className="bi bi-clock-history me-2"></i>
-                    Historique des articles
-                  </h2>
-                  <p className="text-muted mb-0" style={{ fontSize: 14 }}>
-                    Consultez et exportez les articles par semaine
-                  </p>
+                <div className="d-flex justify-content-center">
+                  <div className="text-center">
+                    <h2 className="fw-bold mb-0" style={{ color: "#800020" }}>
+                      <i className="bi bi-clock-history me-2"></i>
+                      Historique des articles
+                    </h2>
+                    <p className="text-muted mb-0" style={{ fontSize: 14 }}>
+                      Consultez et exportez les articles par semaine
+                    </p>
+                  </div>
                 </div>
 
                 {/* Badge filtre actif */}
