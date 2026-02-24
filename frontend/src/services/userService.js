@@ -7,7 +7,14 @@ const getStorageBase = () => {
 
 export const getUserImageUrl = (user) => {
   if (!user?.image) return null;
-  return `${getStorageBase()}/storage/${user.image}`;
+
+  const base = getStorageBase();
+
+  // raha mitahiry: avatars/photo.jpg ao DB
+  const url = `${base}/storage/${user.image}`;
+
+  // cache buster
+  return `${url}?v=${user.updated_at || Date.now()}`;
 };
 
 /**

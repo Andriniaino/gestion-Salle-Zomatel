@@ -249,10 +249,10 @@ const MonProfilPanel = ({ user, onClose, onSaved }) => {
       setNotif({ type: 'error', message: 'Veuillez sélectionner une image (JPG, PNG, GIF, WebP)' });
       return;
     }
-    if (file.size > 2 * 1024 * 1024) {
+    {/*if (file.size > 2 * 1024 * 1024) {
       setNotif({ type: 'error', message: "L'image ne doit pas dépasser 2 Mo" });
       return;
-    }
+    }*/}
     setUploadingImage(true);
     setNotif(null);
     try {
@@ -793,8 +793,8 @@ const ManageUsersModal = ({ show, onClose, showProfil = false }) => {
                         setCreateData(EMPTY_CREATE);
                         setCreateErrors({});
                         setCreateNotif(null);
-                        setCreateAvatarFile(null); // ✅ reset
-                        setCreatePreview(null);    // ✅ reset
+                        setCreateAvatarFile(null);
+                        setCreatePreview(null);
                       }}>
                       <FaTimes />
                     </button>
@@ -805,12 +805,12 @@ const ManageUsersModal = ({ show, onClose, showProfil = false }) => {
                     <form onSubmit={handleSubmitCreate} noValidate>
                       <div className="row g-3">
 
-                        {/* ✅ BLOC PHOTO DE PROFIL — CRÉATION */}
+                        {/* ✅ BLOC PHOTO DE PROFIL */}
                         <div className="col-12 mb-1">
-                          <label className="form-label fw-semibold">Photo de profil <span className="text-muted fw-normal">(optionnel)</span></label>
+                          <label className="form-label fw-semibold">Photo de profil <span className="text-muted fw-normal"></span></label>
                           <div className="d-flex align-items-center gap-3">
 
-                            {/* Aperçu avatar */}
+                           
                             <div style={{
                               width: 64, height: 64, borderRadius: '50%', overflow: 'hidden',
                               backgroundColor: '#e9ecef', flexShrink: 0,
@@ -838,18 +838,18 @@ const ManageUsersModal = ({ show, onClose, showProfil = false }) => {
                                 onChange={(e) => {
                                   const file = e.target.files?.[0];
                                   if (!file) return;
-                                  if (file.size > 2 * 1024 * 1024) {
+                                 {/* if (file.size > 2 * 1024 * 1024) {
                                     setCreateNotif({ type: 'error', message: "L'image ne doit pas dépasser 2 Mo" });
                                     e.target.value = '';
                                     return;
-                                  }
+                                  }*/}
                                   setCreateAvatarFile(file);
                                   setCreatePreview(URL.createObjectURL(file));
                                   e.target.value = '';
                                 }}
                               />
                               <div className="d-flex align-items-center gap-2">
-                                <small className="text-muted">JPG, PNG, GIF, WebP — max 2 Mo</small>
+                                <small className="text-muted">JPG, PNG, GIF, WebP</small>
                                 {createPreview && (
                                   <button
                                     type="button"
@@ -928,7 +928,7 @@ const ManageUsersModal = ({ show, onClose, showProfil = false }) => {
                           <button type="submit" className="btn btn-success" disabled={createLoading}>
                             {createLoading
                               ? <><span className="spinner-border spinner-border-sm me-1" />Création…</>
-                              : <><FaCheck className="me-1" />Créer le compte</>}
+                              : <><FaCheck className="me-1" />Valider</>}
                           </button>
                           <button type="button" className="btn btn-secondary" disabled={createLoading}
                             onClick={() => {
@@ -936,8 +936,8 @@ const ManageUsersModal = ({ show, onClose, showProfil = false }) => {
                               setCreateData(EMPTY_CREATE);
                               setCreateErrors({});
                               setCreateNotif(null);
-                              setCreateAvatarFile(null); // ✅ reset
-                              setCreatePreview(null);    // ✅ reset
+                              setCreateAvatarFile(null);
+                              setCreatePreview(null);
                             }}>
                             <FaTimes className="me-1" />Annuler
                           </button>
@@ -988,7 +988,7 @@ const ManageUsersModal = ({ show, onClose, showProfil = false }) => {
                                   }
                                   e.target.value = '';
                                 }} />
-                              <small className="text-muted">JPG, PNG, GIF, WebP (max 2 Mo)</small>
+                              <small className="text-muted">JPG, PNG, GIF, WebP</small>
                             </div>
                           </div>
                         </div>

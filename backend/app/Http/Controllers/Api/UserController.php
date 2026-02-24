@@ -36,7 +36,7 @@ class UserController extends Controller
                 'password'  => 'required|min:6',
                 'categorie' => 'required|string|max:50',
                 // ✅ Image optionnelle dès la création
-                'image'     => 'nullable|image|mimes:jpeg,png,jpg,gif,webp|max:2048',
+                'image'     => 'nullable|image|mimes:jpeg,png,jpg,gif,webp|max:20480',
             ]);
     
             // ✅ Gestion de l'image si envoyée
@@ -134,7 +134,7 @@ class UserController extends Controller
         }
 
         $request->validate([
-            'image' => 'required|image|mimes:jpeg,png,jpg,gif,webp|max:2048',
+            'image' => 'required|image|mimes:jpeg,png,jpg,gif,webp|max:20480',
         ]);
 
         // Supprimer l'ancienne image si elle existe
