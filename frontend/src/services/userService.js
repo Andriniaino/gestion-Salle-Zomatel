@@ -1,76 +1,73 @@
 import api from "./api";
 
-const getStorageBase = () => {
-  const base = api.defaults.baseURL || "http://localhost:8000/api";
-  return base.replace(/\/api\/?$/, "");
+// ✅ Toutes les URLs se basent sur api — modifier l'IP dans api.js suffit
+const getBaseURL = () => {
+  return (api.defaults.baseURL || "http://localhost:8000/api")
+    .replace(/\/api\/?$/, "");
 };
 
 export const getUserImageUrl = (user) => {
   if (!user?.image) return null;
 
-  const base = getStorageBase();
+  const image = user.image;
+  const base  = getBaseURL();
 
-  // raha mitahiry: avatars/photo.jpg ao DB
-  const url = `${base}/storage/${user.image}`;
+  let url;
 
-  // cache buster
-  return `${url}?v=${user.updated_at || Date.now()}`;
+  if (image.startsWith("http://") || image.startsWith("https://")) {
+    url = image;
+  } else if (image.startsWith("storage/")) {
+    url = `${base}/${image}`;
+  } else {
+    url = `${base}/storage/${image}`;
+  }
+
+  // Anti-cache léger : si updated_at est disponible, on l'utilise comme version
+  if (user.updated_at) {
+    const ts = Date.parse(user.updated_at);
+    if (!Number.isNaN(ts)) {
+      const sep = url.includes("?") ? "&" : "?";
+      url = `${url}${sep}v=${ts}`;
+    }
+  }
+
+  return url;
 };
 
-/**
- * Service pour gérer les Users
- */
-
-// GET - Récupérer tous les utilisateurs
+// ─── GET tous les utilisateurs ────────────────────────────────────────────────
 export const getUsers = async () => {
   try {
     const response = await api.get("/users");
-    return {
-      success: true,
-      data: response.data?.data || response.data,
-    };
+    return { success: true, data: response.data?.data || response.data };
   } catch (error) {
-    return {
-      success: false,
-      error: error.message || "Erreur lors de la récupération des utilisateurs",
-      errors: error.errors || {},
-    };
+    return { success: false, error: error.message || "Erreur récupération utilisateurs" };
   }
 };
 
-// GET - Récupérer un utilisateur par ID
+// ─── GET un utilisateur ───────────────────────────────────────────────────────
 export const getUser = async (id) => {
   try {
     const response = await api.get(`/users/${id}`);
-    return {
-      success: true,
-      data: response.data?.data || response.data,
-    };
+    return { success: true, data: response.data?.data || response.data };
   } catch (error) {
-    return {
-      success: false,
-      error: error.message || `Erreur lors de la récupération de l'utilisateur ${id}`,
-      errors: error.errors || {},
-    };
+    return { success: false, error: error.message || `Erreur récupération utilisateur ${id}` };
   }
 };
 
-// POST - Créer un nouvel utilisateur
-// ✅ fetch natif utilisé pour éviter axios qui transforme FormData en JSON
-export const createUser = async (data) => {
+// ─── POST créer un utilisateur (FormData avec image) ─────────────────────────
+// fetch natif obligatoire pour multipart/form-data — axios transforme en JSON
+export const createUser = async (formData) => {
   try {
-    const token   = localStorage.getItem("token");
-    const baseURL = (api.defaults.baseURL || "http://localhost:8000/api").replace(/\/$/, "");
+    const token = localStorage.getItem("token");
 
-    const response = await fetch(`${baseURL}/users`, {
-      method: "POST",
+    const response = await fetch(`${getBaseURL()}/api/users`, {
+      method:  "POST",
       headers: {
-        // ✅ PAS de Content-Type ici — le navigateur ajoute automatiquement
-        // "multipart/form-data; boundary=..." quand body est un FormData
         "Authorization": `Bearer ${token}`,
         "Accept":        "application/json",
+        // ⚠️ PAS de Content-Type → navigateur gère le boundary multipart
       },
-      body: data, // ← FormData avec image + champs texte
+      body: formData,
     });
 
     const json = await response.json();
@@ -90,15 +87,11 @@ export const createUser = async (data) => {
     };
 
   } catch (error) {
-    return {
-      success: false,
-      message: error.message || "Erreur réseau",
-      errors:  null,
-    };
+    return { success: false, message: error.message || "Erreur réseau", errors: null };
   }
 };
 
-// PUT - Mettre à jour un utilisateur
+// ─── PUT mettre à jour un utilisateur ────────────────────────────────────────
 export const updateUser = async (id, userData) => {
   try {
     const response = await api.put(`/users/${id}`, userData);
@@ -110,28 +103,25 @@ export const updateUser = async (id, userData) => {
   } catch (error) {
     return {
       success: false,
-      error:  error.message || `Erreur lors de la mise à jour de l'utilisateur ${id}`,
+      error:  error.message || `Erreur mise à jour utilisateur ${id}`,
       errors: error.response?.data?.errors || {},
     };
   }
 };
 
-// POST - Mettre à jour la photo de profil
-// ✅ fetch natif pour la même raison — évite axios de transformer FormData
+
 export const uploadUserAvatar = async (id, file) => {
   try {
-    const token   = localStorage.getItem("token");
-    const baseURL = (api.defaults.baseURL || "http://localhost:8000/api").replace(/\/$/, "");
-
+    const token    = localStorage.getItem("token");
     const formData = new FormData();
     formData.append("image", file);
 
-    const response = await fetch(`${baseURL}/users/${id}/avatar`, {
-      method: "POST",
+    const response = await fetch(`${getBaseURL()}/api/users/${id}/avatar`, {
+      method:  "POST",
       headers: {
-        // ✅ Pas de Content-Type — navigateur gère multipart automatiquement
         "Authorization": `Bearer ${token}`,
         "Accept":        "application/json",
+        // ⚠️ PAS de Content-Type → navigateur gère le boundary multipart
       },
       body: formData,
     });
@@ -153,15 +143,11 @@ export const uploadUserAvatar = async (id, file) => {
     };
 
   } catch (error) {
-    return {
-      success: false,
-      error:  error.message || "Erreur réseau lors de l'upload",
-      errors: {},
-    };
+    return { success: false, error: error.message || "Erreur réseau upload", errors: {} };
   }
 };
 
-// DELETE - Supprimer un utilisateur
+// ─── DELETE supprimer un utilisateur ─────────────────────────────────────────
 export const deleteUser = async (id) => {
   try {
     const response = await api.delete(`/users/${id}`);
@@ -172,7 +158,7 @@ export const deleteUser = async (id) => {
   } catch (error) {
     return {
       success: false,
-      error:  error.message || `Erreur lors de la suppression de l'utilisateur ${id}`,
+      error:  error.message || `Erreur suppression utilisateur ${id}`,
       errors: error.errors  || {},
     };
   }

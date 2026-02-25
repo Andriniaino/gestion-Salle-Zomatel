@@ -132,23 +132,31 @@ class UserController extends Controller
                 'message' => "Utilisateur introuvable"
             ], 404);
         }
-
+    
         $request->validate([
-            'image' => 'required|image|mimes:jpeg,png,jpg,gif,webp|max:20480',
+            'image' => 'nullable|image|mimes:jpeg,png,jpg,gif,webp|max:30720',
         ]);
-
-        // Supprimer l'ancienne image si elle existe
+    
+        // ✅ Raha tsy nandefa image
+        if (!$request->hasFile('image')) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Aucune image envoyée'
+            ], 400);
+        }
+    
+        // Supprimer l'ancienne image
         if ($user->image) {
             Storage::disk('public')->delete($user->image);
         }
-
+    
         // Stocker la nouvelle image
         $path = $request->file('image')->store('avatars', 'public');
-
+    
         $user->update(['image' => $path]);
-
+    
         $url = asset('storage/' . $path);
-
+    
         return response()->json([
             'success' => true,
             'message' => 'Photo de profil mise à jour',

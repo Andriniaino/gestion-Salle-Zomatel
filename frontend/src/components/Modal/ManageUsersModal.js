@@ -125,14 +125,24 @@ const pwdMatch = (a, b) => a && b && a === b;
 // ─────────────────────────────────────────────────────────────────────────────
 // PANNEAU MON PROFIL
 // ─────────────────────────────────────────────────────────────────────────────
-const MonProfilPanel = ({ user, onClose, onSaved }) => {
-  const { refreshUser } = useAuth();
+const MonProfilPanel = ({ user: userProp, onClose, onSaved }) => {
+  // ✅ FIX : on lit currentUser DIRECTEMENT depuis le contexte Auth
+  // pour que le composant se re-rende automatiquement quand setUser() est appelé
+  const { user: currentUser, refreshUser, setUser } = useAuth();
+
+  // ✅ FIX : on fusionne la prop initiale avec le contexte pour avoir toujours
+  // les données les plus fraîches (le contexte prime après le premier rendu)
+  const user = currentUser ?? userProp;
+
   const [editMode, setEditMode] = useState(false);
   const [formData, setFormData] = useState({ nom: user.nom || '', prenoms: user.prenoms || '', email: user.email || '' });
   const [errors, setErrors] = useState({});
   const [notif, setNotif] = useState(null);
   const [saving, setSaving] = useState(false);
   const [uploadingImage, setUploadingImage] = useState(false);
+
+  // ✅ FIX : imageUrl est maintenant dérivé de `user` (qui est réactif au contexte)
+  // Il se recalcule automatiquement à chaque fois que currentUser change dans le contexte
   const imageUrl = getUserImageUrl(user);
 
   const [pwdOpen, setPwdOpen] = useState(false);
@@ -144,6 +154,18 @@ const MonProfilPanel = ({ user, onClose, onSaved }) => {
   const [forgotData, setForgotData] = useState({ newPassword: '', confirmPassword: '' });
   const [forgotErrors, setForgotErrors] = useState({});
   const [forgotLoading, setForgotLoading] = useState(false);
+
+  // ✅ FIX : Synchronise le formulaire d'édition si currentUser change
+  // (par exemple après un upload d'avatar qui met à jour le contexte)
+  useEffect(() => {
+    if (!editMode && currentUser) {
+      setFormData({
+        nom: currentUser.nom || '',
+        prenoms: currentUser.prenoms || '',
+        email: currentUser.email || '',
+      });
+    }
+  }, [currentUser, editMode]);
 
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -249,16 +271,26 @@ const MonProfilPanel = ({ user, onClose, onSaved }) => {
       setNotif({ type: 'error', message: 'Veuillez sélectionner une image (JPG, PNG, GIF, WebP)' });
       return;
     }
-    {/*if (file.size > 2 * 1024 * 1024) {
-      setNotif({ type: 'error', message: "L'image ne doit pas dépasser 2 Mo" });
-      return;
-    }*/}
     setUploadingImage(true);
     setNotif(null);
     try {
       const r = await uploadUserAvatar(user.id, file);
       if (r.success) {
-        await refreshUser();
+        // ✅ FIX : setUser met à jour le contexte Auth → currentUser change
+        // → user (= currentUser ?? userProp) change → imageUrl se recalcule
+        // → l'avatar s'affiche IMMÉDIATEMENT sans déconnexion
+        if (r.data?.user) {
+          setUser(r.data.user);
+          try {
+            localStorage.setItem("user", JSON.stringify(r.data.user));
+          } catch {
+            // ignore storage errors
+          }
+        } else {
+          // Fallback : recharger depuis /me si l'API ne renvoie pas le user
+          await refreshUser();
+        }
+
         setNotif({ type: 'success', message: r.message || 'Photo mise à jour !' });
         if (typeof onSaved === 'function') onSaved();
       } else {
@@ -268,6 +300,8 @@ const MonProfilPanel = ({ user, onClose, onSaved }) => {
       setNotif({ type: 'error', message: err.message || 'Erreur réseau' });
     } finally {
       setUploadingImage(false);
+      // ✅ FIX : reset l'input file pour permettre de re-sélectionner le même fichier
+      e.target.value = '';
     }
   };
 
@@ -295,6 +329,7 @@ const MonProfilPanel = ({ user, onClose, onSaved }) => {
                     onChange={handleImageChange}
                     disabled={uploadingImage}
                   />
+                  {/* ✅ FIX : imageUrl est maintenant réactif, l'avatar s'affiche immédiatement */}
                   <div style={{
                     width: 100, height: 100, borderRadius: '50%',
                     border: '3px solid rgba(255,255,255,0.6)', margin: '0 auto 10px',
@@ -368,7 +403,6 @@ const MonProfilPanel = ({ user, onClose, onSaved }) => {
                         </div>
                       </div>
                     </div>
-                    {/* ✅ Admin → bouton Modifier | Autres → lecture seule */}
                     {user.categorie === 'admin' ? (
                       <div className="d-flex flex-wrap gap-2">
                         <button
@@ -531,7 +565,7 @@ const MonProfilPanel = ({ user, onClose, onSaved }) => {
 // COMPOSANT PRINCIPAL
 // ─────────────────────────────────────────────────────────────────────────────
 const ManageUsersModal = ({ show, onClose, showProfil = false }) => {
-  const { user: currentUser } = useAuth();
+  const { user: currentUser, setUser, refreshUser } = useAuth();
 
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -547,7 +581,6 @@ const ManageUsersModal = ({ show, onClose, showProfil = false }) => {
   const [createNotif, setCreateNotif] = useState(null);
   const [createLoading, setCreateLoading] = useState(false);
 
-  // ✅ Nouveaux states pour l'image lors de la création
   const [createAvatarFile, setCreateAvatarFile] = useState(null);
   const [createPreview, setCreatePreview] = useState(null);
 
@@ -589,7 +622,6 @@ const ManageUsersModal = ({ show, onClose, showProfil = false }) => {
     setPanel(null);
     setEditUser(null); setFormData(EMPTY_FORM);
     setCreateData(EMPTY_CREATE); setCreateErrors({}); setCreateNotif(null); setCreateLoading(false);
-    // ✅ Reset des states image création
     setCreateAvatarFile(null);
     setCreatePreview(null);
     setDeleteTarget(null); setDeleteLoading(false);
@@ -657,14 +689,12 @@ const ManageUsersModal = ({ show, onClose, showProfil = false }) => {
     if (Object.keys(errs).length) { setCreateErrors(errs); return; }
     setCreateLoading(true);
     try {
-      // ✅ FormData pour envoyer texte + image ensemble en multipart
       const formPayload = new FormData();
       formPayload.append('nom', createData.nom.trim());
       formPayload.append('prenoms', createData.prenoms.trim());
       formPayload.append('email', createData.email.trim());
       formPayload.append('password', createData.password);
       formPayload.append('categorie', createData.categorie);
-      // ✅ Ajouter l'image seulement si elle existe
       if (createAvatarFile) {
         formPayload.append('image', createAvatarFile);
       }
@@ -687,7 +717,6 @@ const ManageUsersModal = ({ show, onClose, showProfil = false }) => {
           const m = {};
           Object.entries(r.errors).forEach(([k, v]) => { m[k] = Array.isArray(v) ? v[0] : v; });
           setCreateErrors(m);
-          // ✅ Affiche le détail des erreurs Laravel
           const errorMessages = Object.values(m).join(' • ');
           setCreateNotif({ type: 'error', message: errorMessages || r.message || 'Erreur de validation' });
         } else {
@@ -712,8 +741,24 @@ const ManageUsersModal = ({ show, onClose, showProfil = false }) => {
     e.preventDefault();
     try {
       const r = await updateUser(editUser.id, formData);
-      if (r.success) { setTableNotif({ type: 'success', message: r.message || 'Modifié' }); handleCancelEdit(); fetchUsers(); }
-      else setTableNotif({ type: 'error', message: r.error || 'Erreur' });
+      if (r.success) {
+        setTableNotif({ type: 'success', message: r.message || 'Modifié' });
+        handleCancelEdit();
+        fetchUsers();
+        // ✅ Si l'utilisateur modifié est l'utilisateur connecté,
+        // on met à jour le contexte Auth → "Mon Profil" reflète les changements immédiatement
+        if (currentUser && editUser.id === currentUser.id) {
+          if (r.data?.user) {
+            setUser(r.data.user);
+            try { localStorage.setItem('user', JSON.stringify(r.data.user)); } catch { }
+          } else {
+            // Fallback : recharger depuis /me
+            await refreshUser();
+          }
+        }
+      } else {
+        setTableNotif({ type: 'error', message: r.error || 'Erreur' });
+      }
     } catch { setTableNotif({ type: 'error', message: 'Erreur de modification' }); }
   };
 
@@ -770,7 +815,6 @@ const ManageUsersModal = ({ show, onClose, showProfil = false }) => {
               <h5 className="modal-title d-flex align-items-center gap-2">
                 <FaUsers /> Gestion des utilisateurs
               </h5>
-
               <button
                 type="button"
                 className="btn-close btn-close-white"
@@ -805,12 +849,10 @@ const ManageUsersModal = ({ show, onClose, showProfil = false }) => {
                     <form onSubmit={handleSubmitCreate} noValidate>
                       <div className="row g-3">
 
-                        {/* ✅ BLOC PHOTO DE PROFIL */}
+                        {/* BLOC PHOTO DE PROFIL */}
                         <div className="col-12 mb-1">
-                          <label className="form-label fw-semibold">Photo de profil <span className="text-muted fw-normal"></span></label>
+                          <label className="form-label fw-semibold">Photo de profil</label>
                           <div className="d-flex align-items-center gap-3">
-
-                           
                             <div style={{
                               width: 64, height: 64, borderRadius: '50%', overflow: 'hidden',
                               backgroundColor: '#e9ecef', flexShrink: 0,
@@ -826,8 +868,6 @@ const ManageUsersModal = ({ show, onClose, showProfil = false }) => {
                                   : <FaUserCircle style={{ fontSize: 30, color: '#adb5bd' }} />
                               )}
                             </div>
-
-                            {/* Input fichier + actions */}
                             <div className="d-flex flex-column gap-1">
                               <input
                                 type="file"
@@ -838,11 +878,6 @@ const ManageUsersModal = ({ show, onClose, showProfil = false }) => {
                                 onChange={(e) => {
                                   const file = e.target.files?.[0];
                                   if (!file) return;
-                                 {/* if (file.size > 2 * 1024 * 1024) {
-                                    setCreateNotif({ type: 'error', message: "L'image ne doit pas dépasser 2 Mo" });
-                                    e.target.value = '';
-                                    return;
-                                  }*/}
                                   setCreateAvatarFile(file);
                                   setCreatePreview(URL.createObjectURL(file));
                                   e.target.value = '';
@@ -865,7 +900,6 @@ const ManageUsersModal = ({ show, onClose, showProfil = false }) => {
                           </div>
                         </div>
 
-                        {/* Champs du formulaire */}
                         <div className="col-md-4">
                           <label className="form-label fw-semibold" style={{ fontSize: 14 }}>Nom <span className="text-danger">*</span></label>
                           <input type="text" name="nom"
@@ -981,7 +1015,14 @@ const ManageUsersModal = ({ show, onClose, showProfil = false }) => {
                                     if (r.success) {
                                       setTableNotif({ type: 'success', message: r.message });
                                       fetchUsers();
-                                      setEditUser(r.data?.user || editUser);
+                                      const updatedUser = r.data?.user || editUser;
+                                      setEditUser(updatedUser);
+                                      // ✅ Si l'utilisateur modifié est l'utilisateur connecté,
+                                      // on met à jour le contexte Auth → "Mon Profil" se met à jour immédiatement
+                                      if (currentUser && updatedUser.id === currentUser.id) {
+                                        setUser(updatedUser);
+                                        try { localStorage.setItem('user', JSON.stringify(updatedUser)); } catch { }
+                                      }
                                     } else {
                                       setTableNotif({ type: 'error', message: r.error });
                                     }
