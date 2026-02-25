@@ -1225,4 +1225,4 @@ const ManageUsersModal = ({ show, onClose, showProfil = false }) => {
   );
 };
 
-export default ManageUsersModal;
+export default ManageUsersModal; 
