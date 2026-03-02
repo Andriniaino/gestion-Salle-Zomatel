@@ -1,3 +1,5 @@
+// src/services/userService.js
+
 import api from "./api";
 
 // ✅ Toutes les URLs se basent sur api — modifier l'IP dans api.js suffit
@@ -6,6 +8,9 @@ const getBaseURL = () => {
     .replace(/\/api\/?$/, "");
 };
 
+// ─── Construit l'URL de l'image d'un utilisateur ─────────────────────────────
+// ✅ FIX : updated_at est NULL en base → on n'utilise plus updated_at comme cache-buster
+// Le cache-busting est géré dans ManageUsersModal via imageTimestamp (Date.now())
 export const getUserImageUrl = (user) => {
   if (!user?.image) return null;
 
@@ -22,15 +27,8 @@ export const getUserImageUrl = (user) => {
     url = `${base}/storage/${image}`;
   }
 
-  // Anti-cache léger : si updated_at est disponible, on l'utilise comme version
-  if (user.updated_at) {
-    const ts = Date.parse(user.updated_at);
-    if (!Number.isNaN(ts)) {
-      const sep = url.includes("?") ? "&" : "?";
-      url = `${url}${sep}v=${ts}`;
-    }
-  }
-
+  // ✅ On retire le cache-busting basé sur updated_at (NULL en base = inutile)
+  // Le cache-busting est maintenant géré côté composant avec ?t=imageTimestamp
   return url;
 };
 
@@ -55,7 +53,6 @@ export const getUser = async (id) => {
 };
 
 // ─── POST créer un utilisateur (FormData avec image) ─────────────────────────
-// fetch natif obligatoire pour multipart/form-data — axios transforme en JSON
 export const createUser = async (formData) => {
   try {
     const token = localStorage.getItem("token");
@@ -109,7 +106,7 @@ export const updateUser = async (id, userData) => {
   }
 };
 
-
+// ─── POST upload avatar ───────────────────────────────────────────────────────
 export const uploadUserAvatar = async (id, file) => {
   try {
     const token    = localStorage.getItem("token");
@@ -162,4 +159,15 @@ export const deleteUser = async (id) => {
       errors: error.errors  || {},
     };
   }
+};
+
+// ─── Export default (compatibilité) ──────────────────────────────────────────
+export default {
+  getUserImageUrl,
+  getUsers,
+  getUser,
+  createUser,
+  updateUser,
+  uploadUserAvatar,
+  deleteUser,
 };
