@@ -2,15 +2,13 @@
 
 import api from "./api";
 
-// ✅ Toutes les URLs se basent sur api — modifier l'IP dans api.js suffit
+// ─── Base URL (sans /api) ─────────────────────────────────────────────────────
 const getBaseURL = () => {
-  return (api.defaults.baseURL || "http://localhost:8000/api")
+  return (api.defaults.baseURL || "http://192.168.7.163:8000/api")
     .replace(/\/api\/?$/, "");
 };
 
-// ─── Construit l'URL de l'image d'un utilisateur ─────────────────────────────
-// ✅ FIX : updated_at est NULL en base → on n'utilise plus updated_at comme cache-buster
-// Le cache-busting est géré dans ManageUsersModal via imageTimestamp (Date.now())
+// ─── Construit l'URL publique de l'image d'un utilisateur ────────────────────
 export const getUserImageUrl = (user) => {
   if (!user?.image) return null;
 
@@ -18,7 +16,6 @@ export const getUserImageUrl = (user) => {
   const base  = getBaseURL();
 
   let url;
-
   if (image.startsWith("http://") || image.startsWith("https://")) {
     url = image;
   } else if (image.startsWith("storage/")) {
@@ -27,8 +24,7 @@ export const getUserImageUrl = (user) => {
     url = `${base}/storage/${image}`;
   }
 
-  // ✅ On retire le cache-busting basé sur updated_at (NULL en base = inutile)
-  // Le cache-busting est maintenant géré côté composant avec ?t=imageTimestamp
+  // Le cache-busting est géré côté composant avec ?t=imageTimestamp
   return url;
 };
 
@@ -52,39 +48,25 @@ export const getUser = async (id) => {
   }
 };
 
-// ─── POST créer un utilisateur (FormData avec image) ─────────────────────────
+// ─── POST créer un utilisateur (FormData avec image optionnelle) ──────────────
+// ✅ FIX : utilise api Axios — token injecté automatiquement via intercepteur
 export const createUser = async (formData) => {
   try {
-    const token = localStorage.getItem("token");
-
-    const response = await fetch(`${getBaseURL()}/api/users`, {
-      method:  "POST",
-      headers: {
-        "Authorization": `Bearer ${token}`,
-        "Accept":        "application/json",
-        // ⚠️ PAS de Content-Type → navigateur gère le boundary multipart
-      },
-      body: formData,
+    const response = await api.post("/users", formData, {
+      headers: { "Content-Type": "multipart/form-data" },
     });
-
-    const json = await response.json();
-
-    if (!response.ok) {
-      return {
-        success: false,
-        message: json.message || "Erreur lors de la création",
-        errors:  json.errors  || null,
-      };
-    }
-
     return {
       success: true,
-      data:    json.data    || json,
-      message: json.message || "Utilisateur créé avec succès",
+      data:    response.data?.data    || response.data,
+      message: response.data?.message || "Utilisateur créé avec succès",
     };
-
   } catch (error) {
-    return { success: false, message: error.message || "Erreur réseau", errors: null };
+    const json = error.response?.data;
+    return {
+      success: false,
+      message: json?.message || "Erreur lors de la création",
+      errors:  json?.errors  || null,
+    };
   }
 };
 
@@ -94,53 +76,40 @@ export const updateUser = async (id, userData) => {
     const response = await api.put(`/users/${id}`, userData);
     return {
       success: true,
-      data:    response.data?.data || response.data,
+      data:    response.data?.data    || response.data,
       message: response.data?.message || "Utilisateur mis à jour avec succès",
     };
   } catch (error) {
     return {
       success: false,
-      error:  error.message || `Erreur mise à jour utilisateur ${id}`,
+      error:  error.message                || `Erreur mise à jour utilisateur ${id}`,
       errors: error.response?.data?.errors || {},
     };
   }
 };
 
 // ─── POST upload avatar ───────────────────────────────────────────────────────
+// ✅ FIX : utilise api Axios — résout "Authorization: Bearer null"
 export const uploadUserAvatar = async (id, file) => {
   try {
-    const token    = localStorage.getItem("token");
     const formData = new FormData();
     formData.append("image", file);
 
-    const response = await fetch(`${getBaseURL()}/api/users/${id}/avatar`, {
-      method:  "POST",
-      headers: {
-        "Authorization": `Bearer ${token}`,
-        "Accept":        "application/json",
-        // ⚠️ PAS de Content-Type → navigateur gère le boundary multipart
-      },
-      body: formData,
+    const response = await api.post(`/users/${id}/avatar`, formData, {
+      headers: { "Content-Type": "multipart/form-data" },
     });
-
-    const json = await response.json();
-
-    if (!response.ok) {
-      return {
-        success: false,
-        error:  json.message || "Erreur lors de l'upload",
-        errors: json.errors  || {},
-      };
-    }
-
     return {
       success: true,
-      data:    json.data,
-      message: json.message || "Photo mise à jour",
+      data:    response.data?.data,
+      message: response.data?.message || "Photo mise à jour",
     };
-
   } catch (error) {
-    return { success: false, error: error.message || "Erreur réseau upload", errors: {} };
+    const json = error.response?.data;
+    return {
+      success: false,
+      error:  json?.message || "Erreur lors de l'upload",
+      errors: json?.errors  || {},
+    };
   }
 };
 
@@ -161,7 +130,6 @@ export const deleteUser = async (id) => {
   }
 };
 
-// ─── Export default (compatibilité) ──────────────────────────────────────────
 export default {
   getUserImageUrl,
   getUsers,

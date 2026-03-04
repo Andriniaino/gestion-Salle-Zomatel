@@ -1,14 +1,18 @@
-// frontend/src/components/Modal/ManageUsersModal.jsx
+// src/components/Modal/ManageUsersModal.jsx
 
 import React, { useState, useEffect } from 'react';
-import { getUsers, updateUser, deleteUser, createUser, uploadUserAvatar, getUserImageUrl } from '../../services/userService';
+import {
+  getUsers, updateUser, deleteUser,
+  createUser, uploadUserAvatar, getUserImageUrl,
+} from '../../services/userService';
 import { useAuth } from '../../contexts/AuthContext';
 import {
   FaUsers, FaUserPlus, FaPencilAlt, FaTrashAlt,
   FaKey, FaUnlock, FaTimes, FaCheck, FaEye, FaEyeSlash,
-  FaExclamationTriangle, FaUserCircle, FaEnvelope,
-  FaTag, FaSave, FaEdit
+  FaExclamationTriangle, FaUserCircle,
 } from 'react-icons/fa';
+
+import UserProfils from './UserProfils';
 
 // ─── Constantes ───────────────────────────────────────────────────────────────
 const EMPTY_FORM   = { nom: '', prenoms: '', email: '', categorie: '' };
@@ -108,472 +112,55 @@ const DeleteConfirmModal = ({ user, onConfirm, onCancel, loading }) => {
 
 // ─── Badge catégorie ──────────────────────────────────────────────────────────
 const badgeClass = (cat) => {
-  const m = { admin: 'bg-danger', manager: 'bg-warning text-dark', Resto: 'bg-info text-dark', snack: 'bg-primary', detente: 'bg-success' };
+  const m = {
+    admin:   'bg-danger',
+    manager: 'bg-warning text-dark',
+    Resto:   'bg-info text-dark',
+    snack:   'bg-primary',
+    detente: 'bg-success',
+  };
   return `badge ${m[cat] || 'bg-secondary'}`;
 };
 
 const pwdMatch = (a, b) => a && b && a === b;
 
 // ─────────────────────────────────────────────────────────────────────────────
-// PANNEAU MON PROFIL
-// ─────────────────────────────────────────────────────────────────────────────
-const MonProfilPanel = ({ user: userProp, onClose, onSaved }) => {
-  const { user: currentUser, refreshUser, setUser } = useAuth();
-
-  const user = currentUser ?? userProp;
-
-  const [editMode,       setEditMode]       = useState(false);
-  const [formData,       setFormData]       = useState({ nom: user.nom || '', prenoms: user.prenoms || '', email: user.email || '' });
-  const [errors,         setErrors]         = useState({});
-  const [notif,          setNotif]          = useState(null);
-  const [saving,         setSaving]         = useState(false);
-  const [uploadingImage, setUploadingImage] = useState(false);
-
-  // ✅ FIX CACHE : timestamp local indépendant de updated_at (qui est NULL en base)
-  // Mis à jour uniquement après un upload réussi → force rechargement réseau
-  const [imageTimestamp, setImageTimestamp] = useState(() => Date.now());
-
-  // ✅ FIX : on prend l'URL brute de getUserImageUrl (sans ?v=updated_at puisque NULL)
-  // et on ajoute notre propre ?t=imageTimestamp qui change à chaque upload
-  const rawUrl   = getUserImageUrl(user);
-  const cleanUrl = rawUrl ? rawUrl.split('?')[0] : null; // sécurité : retire tout paramètre éventuel
-  const imageUrl = cleanUrl ? `${cleanUrl}?t=${imageTimestamp}` : null;
-
-  const [pwdOpen,     setPwdOpen]     = useState(false);
-  const [pwdData,     setPwdData]     = useState({ oldPassword: '', newPassword: '', confirmPassword: '' });
-  const [pwdErrors,   setPwdErrors]   = useState({});
-  const [pwdLoading,  setPwdLoading]  = useState(false);
-
-  const [forgotOpen,    setForgotOpen]    = useState(false);
-  const [forgotData,    setForgotData]    = useState({ newPassword: '', confirmPassword: '' });
-  const [forgotErrors,  setForgotErrors]  = useState({});
-  const [forgotLoading, setForgotLoading] = useState(false);
-
-  // Synchronise le formulaire quand currentUser change (hors mode édition)
-  useEffect(() => {
-    if (!editMode && currentUser) {
-      setFormData({ nom: currentUser.nom || '', prenoms: currentUser.prenoms || '', email: currentUser.email || '' });
-    }
-  }, [currentUser?.nom, currentUser?.prenoms, currentUser?.email, editMode]);
-
-  const handleChange = (e) => {
-    const { name, value } = e.target;
-    setFormData(p => ({ ...p, [name]: value }));
-    if (errors[name]) setErrors(p => ({ ...p, [name]: '' }));
-  };
-
-  const validateInfo = () => {
-    const e = {};
-    if (!formData.nom.trim())     e.nom     = 'Le nom est requis';
-    if (!formData.prenoms.trim()) e.prenoms = 'Les prénoms sont requis';
-    if (!formData.email.trim())   e.email   = "L'email est requis";
-    else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email)) e.email = 'Email invalide';
-    return e;
-  };
-
-  const handleSaveInfo = async (e) => {
-    e.preventDefault();
-    const errs = validateInfo();
-    if (Object.keys(errs).length) { setErrors(errs); return; }
-    setSaving(true);
-    try {
-      const r = await updateUser(user.id, { nom: formData.nom.trim(), prenoms: formData.prenoms.trim(), email: formData.email.trim() });
-      if (r.success) {
-        if (r.data?.user) {
-          setUser(r.data.user);
-          try { localStorage.setItem('user', JSON.stringify(r.data.user)); } catch {}
-        } else {
-          const updated = { ...user, nom: formData.nom.trim(), prenoms: formData.prenoms.trim(), email: formData.email.trim() };
-          setUser(updated);
-          try { localStorage.setItem('user', JSON.stringify(updated)); } catch {}
-        }
-        setNotif({ type: 'success', message: r.message || 'Profil mis à jour avec succès !' });
-        setEditMode(false);
-        if (typeof onSaved === 'function') onSaved();
-      } else {
-        if (r.errors) {
-          const mapped = {};
-          Object.entries(r.errors).forEach(([k, v]) => { mapped[k] = Array.isArray(v) ? v[0] : v; });
-          setErrors(mapped);
-        }
-        setNotif({ type: 'error', message: r.message || 'Erreur de mise à jour' });
-      }
-    } catch (err) {
-      setNotif({ type: 'error', message: err.message || 'Erreur réseau' });
-    } finally { setSaving(false); }
-  };
-
-  const handleCancelEdit = () => {
-    setFormData({ nom: currentUser?.nom || '', prenoms: currentUser?.prenoms || '', email: currentUser?.email || '' });
-    setErrors({});
-    setEditMode(false);
-  };
-
-  const validatePwd = () => {
-    const e = {};
-    if (!pwdData.oldPassword) e.oldPassword = 'Ancien mot de passe requis';
-    if (!pwdData.newPassword) e.newPassword = 'Nouveau mot de passe requis';
-    else if (pwdData.newPassword.length < 6) e.newPassword = 'Minimum 6 caractères';
-    if (pwdData.newPassword !== pwdData.confirmPassword) e.confirmPassword = 'Les mots de passe ne correspondent pas';
-    return e;
-  };
-
-  const handleSavePwd = async (e) => {
-    e.preventDefault();
-    const errs = validatePwd();
-    if (Object.keys(errs).length) { setPwdErrors(errs); return; }
-    setPwdLoading(true);
-    try {
-      const r = await updateUser(user.id, { oldPassword: pwdData.oldPassword, password: pwdData.newPassword });
-      if (r.success) {
-        if (r.data?.user) { setUser(r.data.user); try { localStorage.setItem('user', JSON.stringify(r.data.user)); } catch {} }
-        setNotif({ type: 'success', message: r.message || 'Mot de passe modifié avec succès !' });
-        setPwdOpen(false); setPwdData({ oldPassword: '', newPassword: '', confirmPassword: '' }); setPwdErrors({});
-      } else {
-        setNotif({ type: 'error', message: r.error || 'Erreur de changement de mot de passe' });
-      }
-    } catch (err) { setNotif({ type: 'error', message: err.message || 'Erreur réseau' }); }
-    finally { setPwdLoading(false); }
-  };
-
-  const validateForgot = () => {
-    const e = {};
-    if (!forgotData.newPassword) e.newPassword = 'Nouveau mot de passe requis';
-    else if (forgotData.newPassword.length < 6) e.newPassword = 'Minimum 6 caractères';
-    if (forgotData.newPassword !== forgotData.confirmPassword) e.confirmPassword = 'Les mots de passe ne correspondent pas';
-    return e;
-  };
-
-  const handleSaveForgot = async (e) => {
-    e.preventDefault();
-    const errs = validateForgot();
-    if (Object.keys(errs).length) { setForgotErrors(errs); return; }
-    setForgotLoading(true);
-    try {
-      const r = await updateUser(user.id, { password: forgotData.newPassword });
-      if (r.success) {
-        if (r.data?.user) { setUser(r.data.user); try { localStorage.setItem('user', JSON.stringify(r.data.user)); } catch {} }
-        setNotif({ type: 'success', message: r.message || 'Mot de passe réinitialisé avec succès !' });
-        setForgotOpen(false); setForgotData({ newPassword: '', confirmPassword: '' }); setForgotErrors({});
-      } else {
-        setNotif({ type: 'error', message: r.error || 'Erreur' });
-      }
-    } catch (err) { setNotif({ type: 'error', message: err.message || 'Erreur réseau' }); }
-    finally { setForgotLoading(false); }
-  };
-
-  const initiales = `${(user.prenoms || '').charAt(0)}${(user.nom || '').charAt(0)}`.toUpperCase();
-
-  const handleImageChange = async (e) => {
-    const file = e.target.files?.[0];
-    if (!file || !file.type.startsWith('image/')) {
-      setNotif({ type: 'error', message: 'Veuillez sélectionner une image (JPG, PNG, GIF, WebP)' });
-      return;
-    }
-    setUploadingImage(true);
-    setNotif(null);
-    try {
-      const r = await uploadUserAvatar(user.id, file);
-      if (r.success) {
-        // ✅ ÉTAPE 1 : mettre à jour le contexte Auth avec le user retourné par l'API
-        if (r.data?.user) {
-          setUser(r.data.user);
-          try { localStorage.setItem('user', JSON.stringify(r.data.user)); } catch {}
-        } else {
-          await refreshUser();
-        }
-        // ✅ ÉTAPE 2 : invalider le timestamp → imageUrl change → navigateur recharge depuis le serveur
-        // Cela fonctionne même si updated_at est NULL en base de données
-        setImageTimestamp(Date.now());
-        setNotif({ type: 'success', message: r.message || 'Photo mise à jour !' });
-        if (typeof onSaved === 'function') onSaved();
-      } else {
-        setNotif({ type: 'error', message: r.error || "Erreur lors de l'upload" });
-      }
-    } catch (err) {
-      setNotif({ type: 'error', message: err.message || 'Erreur réseau' });
-    } finally {
-      setUploadingImage(false);
-      e.target.value = '';
-    }
-  };
-
-  return (
-    <>
-      <div className="modal show d-block" style={{ backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 1050 }}>
-        <div className="modal-dialog modal-dialog-centered" style={{ maxWidth: 560 }}>
-          <div className="modal-content shadow-lg border-0">
-
-            <div className="modal-header text-white border-0" style={{ backgroundColor: '#800020' }}>
-              <h5 className="modal-title d-flex align-items-center gap-2"><FaUserCircle /> Mon Profil</h5>
-              <button className="btn-close btn-close-white" onClick={onClose} />
-            </div>
-
-            <div className="modal-body p-0">
-              <div className="text-center py-4" style={{ background: 'linear-gradient(135deg, #800020 0%, #b0003a 100%)' }}>
-                <label className="d-inline-block position-relative" style={{ cursor: uploadingImage ? 'wait' : 'pointer' }}>
-                  <input
-                    type="file" accept="image/jpeg,image/png,image/gif,image/webp"
-                    className="d-none" onChange={handleImageChange} disabled={uploadingImage}
-                  />
-                  {/*
-                    ✅ FIX FINAL IMAGE :
-                    - <img key={imageTimestamp}> force React à recréer le nœud DOM à chaque upload
-                    - src contient ?t=imageTimestamp qui change → navigateur recharge depuis le serveur
-                    - updated_at NULL ne pose plus aucun problème
-                  */}
-                  <div style={{
-                    width: 100, height: 100, borderRadius: '50%',
-                    border: '3px solid rgba(255,255,255,0.6)',
-                    margin: '0 auto 10px', overflow: 'hidden',
-                    backgroundColor: 'rgba(255,255,255,0.2)',
-                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    fontSize: 32, fontWeight: 700, color: '#fff', letterSpacing: 2,
-                    position: 'relative',
-                  }}>
-                    {imageUrl ? (
-                      <img
-                        key={imageTimestamp}
-                        src={imageUrl}
-                        alt="avatar"
-                        style={{
-                          width: '100%', height: '100%',
-                          objectFit: 'cover', objectPosition: 'center',
-                          position: 'absolute', top: 0, left: 0,
-                          borderRadius: '50%',
-                        }}
-                      />
-                    ) : (
-                      <span>{initiales}</span>
-                    )}
-                  </div>
-
-                  {uploadingImage && (
-                    <div style={{
-                      position: 'absolute', inset: 0, borderRadius: '50%',
-                      background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    }}>
-                      <span className="spinner-border text-white" />
-                    </div>
-                  )}
-                  {!uploadingImage && (
-                    <small className="text-white d-block mt-1 opacity-90">
-                      <FaEdit size={12} /> Cliquer pour modifier la photo
-                    </small>
-                  )}
-                </label>
-
-                <div className="text-white fw-bold mt-2" style={{ fontSize: 18 }}>{user.prenoms} {user.nom}</div>
-                <span className={`${badgeClass(user.categorie)} mt-1`} style={{ fontSize: 12, padding: '4px 12px' }}>
-                  {user.categorie}
-                </span>
-              </div>
-
-              <div className="p-4">
-                <Notif type={notif?.type} message={notif?.message} onClose={() => setNotif(null)} />
-
-                {!editMode && (
-                  <>
-                    <div className="card border-0 bg-light rounded-3 mb-3">
-                      <div className="card-body py-3">
-                        <div className="row g-3">
-                          <div className="col-6">
-                            <div className="d-flex align-items-center gap-2 mb-1">
-                              <FaUserCircle className="text-muted" style={{ fontSize: 13 }} />
-                              <span className="text-muted" style={{ fontSize: 12 }}>Nom</span>
-                            </div>
-                            <div className="fw-semibold">{user.nom}</div>
-                          </div>
-                          <div className="col-6">
-                            <div className="d-flex align-items-center gap-2 mb-1">
-                              <FaUserCircle className="text-muted" style={{ fontSize: 13 }} />
-                              <span className="text-muted" style={{ fontSize: 12 }}>Prénoms</span>
-                            </div>
-                            <div className="fw-semibold">{user.prenoms}</div>
-                          </div>
-                          <div className="col-12">
-                            <div className="d-flex align-items-center gap-2 mb-1">
-                              <FaEnvelope className="text-muted" style={{ fontSize: 13 }} />
-                              <span className="text-muted" style={{ fontSize: 12 }}>Email</span>
-                            </div>
-                            <div className="fw-semibold">{user.email}</div>
-                          </div>
-                          <div className="col-12">
-                            <div className="d-flex align-items-center gap-2 mb-1">
-                              <FaTag className="text-muted" style={{ fontSize: 13 }} />
-                              <span className="text-muted" style={{ fontSize: 12 }}>Catégorie</span>
-                            </div>
-                            <span className={badgeClass(user.categorie)}>{user.categorie}</span>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                    {user.categorie === 'admin' ? (
-                      <div className="d-flex flex-wrap gap-2">
-                        <button className="btn btn-primary d-flex align-items-center gap-2" onClick={() => setEditMode(true)}>
-                          <FaEdit /> Modifier mes informations
-                        </button>
-                      </div>
-                    ) : (
-                      <div className="alert alert-info py-2 px-3 mb-0 d-flex align-items-center gap-2" style={{ fontSize: 13 }}>
-                        <FaTag />
-                        Vos informations sont en lecture seule. Contactez un administrateur pour toute modification.
-                      </div>
-                    )}
-                  </>
-                )}
-
-                {editMode && (
-                  <form onSubmit={handleSaveInfo} noValidate>
-                    <div className="row g-3">
-                      <div className="col-md-6">
-                        <label className="form-label fw-semibold" style={{ fontSize: 14 }}>Nom <span className="text-danger">*</span></label>
-                        <input type="text" name="nom"
-                          className={`form-control${errors.nom ? ' is-invalid' : ''}`}
-                          value={formData.nom} onChange={handleChange} disabled={saving} />
-                        {errors.nom && <div className="invalid-feedback">{errors.nom}</div>}
-                      </div>
-                      <div className="col-md-6">
-                        <label className="form-label fw-semibold" style={{ fontSize: 14 }}>Prénoms <span className="text-danger">*</span></label>
-                        <input type="text" name="prenoms"
-                          className={`form-control${errors.prenoms ? ' is-invalid' : ''}`}
-                          value={formData.prenoms} onChange={handleChange} disabled={saving} />
-                        {errors.prenoms && <div className="invalid-feedback">{errors.prenoms}</div>}
-                      </div>
-                      <div className="col-12">
-                        <label className="form-label fw-semibold" style={{ fontSize: 14 }}>Email <span className="text-danger">*</span></label>
-                        <input type="email" name="email"
-                          className={`form-control${errors.email ? ' is-invalid' : ''}`}
-                          value={formData.email} onChange={handleChange} disabled={saving} />
-                        {errors.email && <div className="invalid-feedback">{errors.email}</div>}
-                      </div>
-                      <div className="col-12">
-                        <label className="form-label fw-semibold" style={{ fontSize: 14 }}>Catégorie</label>
-                        <input type="text" className="form-control bg-light" value={user.categorie} disabled readOnly />
-                        <small className="text-muted">La catégorie ne peut pas être modifiée ici.</small>
-                      </div>
-                    </div>
-                    <div className="d-flex gap-2 mt-3">
-                      <button type="submit" className="btn btn-success d-flex align-items-center gap-2" disabled={saving}>
-                        {saving ? <><span className="spinner-border spinner-border-sm" />Enregistrement…</> : <><FaSave />Enregistrer</>}
-                      </button>
-                      <button type="button" className="btn btn-secondary" onClick={handleCancelEdit} disabled={saving}>
-                        <FaTimes className="me-1" />Annuler
-                      </button>
-                    </div>
-                  </form>
-                )}
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {pwdOpen && (
-        <div className="modal show d-block" style={{ backgroundColor: 'rgba(0,0,0,0.6)', zIndex: 1060 }}>
-          <div className="modal-dialog modal-dialog-centered" style={{ maxWidth: 440 }}>
-            <div className="modal-content shadow-lg">
-              <div className="modal-header text-white" style={{ backgroundColor: '#1a6bbf' }}>
-                <h6 className="modal-title d-flex align-items-center gap-2 mb-0"><FaKey />Changer le mot de passe</h6>
-                <button className="btn-close btn-close-white"
-                  onClick={() => { setPwdOpen(false); setPwdData({ oldPassword: '', newPassword: '', confirmPassword: '' }); setPwdErrors({}); }} />
-              </div>
-              <div className="modal-body p-4">
-                <form onSubmit={handleSavePwd} noValidate>
-                  <PwdInput label="Ancien mot de passe" name="old_p" value={pwdData.oldPassword}
-                    onChange={(v) => setPwdData(p => ({ ...p, oldPassword: v }))} error={pwdErrors.oldPassword} />
-                  <PwdInput label="Nouveau mot de passe" name="new_p" value={pwdData.newPassword}
-                    onChange={(v) => setPwdData(p => ({ ...p, newPassword: v }))} error={pwdErrors.newPassword} />
-                  <PwdInput label="Confirmer le mot de passe" name="conf_p" value={pwdData.confirmPassword}
-                    onChange={(v) => setPwdData(p => ({ ...p, confirmPassword: v }))}
-                    error={pwdErrors.confirmPassword}
-                    success={pwdMatch(pwdData.newPassword, pwdData.confirmPassword) ? 'Mots de passe identiques ✓' : null} />
-                  <div className="d-flex justify-content-end gap-2">
-                    <button type="button" className="btn btn-secondary"
-                      onClick={() => { setPwdOpen(false); setPwdData({ oldPassword: '', newPassword: '', confirmPassword: '' }); setPwdErrors({}); }}>
-                      <FaTimes className="me-1" />Annuler
-                    </button>
-                    <button type="submit" className="btn btn-primary" disabled={pwdLoading}>
-                      {pwdLoading ? <span className="spinner-border spinner-border-sm me-1" /> : <FaCheck className="me-1" />}Confirmer
-                    </button>
-                  </div>
-                </form>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {forgotOpen && (
-        <div className="modal show d-block" style={{ backgroundColor: 'rgba(0,0,0,0.6)', zIndex: 1060 }}>
-          <div className="modal-dialog modal-dialog-centered" style={{ maxWidth: 440 }}>
-            <div className="modal-content shadow-lg">
-              <div className="modal-header text-white" style={{ backgroundColor: '#c0392b' }}>
-                <h6 className="modal-title d-flex align-items-center gap-2 mb-0"><FaUnlock />Réinitialiser mon mot de passe</h6>
-                <button className="btn-close btn-close-white"
-                  onClick={() => { setForgotOpen(false); setForgotData({ newPassword: '', confirmPassword: '' }); setForgotErrors({}); }} />
-              </div>
-              <div className="modal-body p-4">
-                <div className="alert alert-warning py-2 small mb-3">
-                  <strong>Attention :</strong> Le mot de passe sera remplacé sans vérification de l'ancien.
-                </div>
-                <form onSubmit={handleSaveForgot} noValidate>
-                  <PwdInput label="Nouveau mot de passe" name="forgot_new" value={forgotData.newPassword}
-                    onChange={(v) => setForgotData(p => ({ ...p, newPassword: v }))} error={forgotErrors.newPassword} />
-                  <PwdInput label="Confirmer le mot de passe" name="forgot_conf" value={forgotData.confirmPassword}
-                    onChange={(v) => setForgotData(p => ({ ...p, confirmPassword: v }))}
-                    error={forgotErrors.confirmPassword}
-                    success={pwdMatch(forgotData.newPassword, forgotData.confirmPassword) ? 'Mots de passe identiques ✓' : null} />
-                  <div className="d-flex justify-content-end gap-2">
-                    <button type="button" className="btn btn-secondary"
-                      onClick={() => { setForgotOpen(false); setForgotData({ newPassword: '', confirmPassword: '' }); setForgotErrors({}); }}>
-                      <FaTimes className="me-1" />Annuler
-                    </button>
-                    <button type="submit" className="btn btn-danger" disabled={forgotLoading}>
-                      {forgotLoading ? <span className="spinner-border spinner-border-sm me-1" /> : <FaUnlock className="me-1" />}Réinitialiser
-                    </button>
-                  </div>
-                </form>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-    </>
-  );
-};
-
-// ─────────────────────────────────────────────────────────────────────────────
 // COMPOSANT PRINCIPAL
 // ─────────────────────────────────────────────────────────────────────────────
 const ManageUsersModal = ({ show, onClose, showProfil = false }) => {
-  const { user: currentUser, setUser, refreshUser } = useAuth();
+  const { user: currentUser, setUser } = useAuth();
 
-  const [users,         setUsers]        = useState([]);
-  const [loading,       setLoading]      = useState(false);
-  const [panel,         setPanel]        = useState(null);
-  const [editUser,      setEditUser]     = useState(null);
-  const [formData,      setFormData]     = useState(EMPTY_FORM);
-  const [createData,    setCreateData]   = useState(EMPTY_CREATE);
-  const [createErrors,  setCreateErrors] = useState({});
-  const [createNotif,   setCreateNotif]  = useState(null);
-  const [createLoading, setCreateLoading]= useState(false);
+  const [users,           setUsers]           = useState([]);
+  const [loading,         setLoading]         = useState(false);
+  const [panel,           setPanel]           = useState(null); // null | 'create' | 'edit' | 'profil'
+  const [editUser,        setEditUser]        = useState(null);
+  const [formData,        setFormData]        = useState(EMPTY_FORM);
+
+  const [createData,       setCreateData]       = useState(EMPTY_CREATE);
+  const [createErrors,     setCreateErrors]     = useState({});
+  const [createNotif,      setCreateNotif]      = useState(null);
+  const [createLoading,    setCreateLoading]    = useState(false);
   const [createAvatarFile, setCreateAvatarFile] = useState(null);
   const [createPreview,    setCreatePreview]    = useState(null);
-  const [deleteTarget,  setDeleteTarget] = useState(null);
-  const [deleteLoading, setDeleteLoading]= useState(false);
+
+  const [deleteTarget,  setDeleteTarget]  = useState(null);
+  const [deleteLoading, setDeleteLoading] = useState(false);
+
   const [pwdModal,   setPwdModal]   = useState(false);
   const [pwdTarget,  setPwdTarget]  = useState(null);
   const [pwdData,    setPwdData]    = useState(EMPTY_PWD);
   const [pwdErrors,  setPwdErrors]  = useState({});
   const [pwdLoading, setPwdLoading] = useState(false);
+
   const [forgotModal,   setForgotModal]   = useState(false);
   const [forgotTarget,  setForgotTarget]  = useState(null);
   const [forgotData,    setForgotData]    = useState(EMPTY_FORGOT);
   const [forgotErrors,  setForgotErrors]  = useState({});
   const [forgotLoading, setForgotLoading] = useState(false);
-  const [tableNotif,    setTableNotif]    = useState(null);
 
+  const [tableNotif, setTableNotif] = useState(null);
+
+  // ── Chargement initial ───────────────────────────────────────────────────────
   useEffect(() => {
     if (show) {
       fetchUsers();
@@ -587,14 +174,18 @@ const ManageUsersModal = ({ show, onClose, showProfil = false }) => {
       const r = await getUsers();
       if (r.success) setUsers(r.data);
       else setTableNotif({ type: 'error', message: r.error });
-    } catch { setTableNotif({ type: 'error', message: 'Erreur de chargement' }); }
-    finally { setLoading(false); }
+    } catch {
+      setTableNotif({ type: 'error', message: 'Erreur de chargement' });
+    } finally {
+      setLoading(false);
+    }
   };
 
+  // ── Fermeture complète ───────────────────────────────────────────────────────
   const handleClose = () => {
     setPanel(null); setEditUser(null); setFormData(EMPTY_FORM);
-    setCreateData(EMPTY_CREATE); setCreateErrors({}); setCreateNotif(null); setCreateLoading(false);
-    setCreateAvatarFile(null); setCreatePreview(null);
+    setCreateData(EMPTY_CREATE); setCreateErrors({}); setCreateNotif(null);
+    setCreateLoading(false); setCreateAvatarFile(null); setCreatePreview(null);
     setDeleteTarget(null); setDeleteLoading(false);
     setPwdModal(false); setPwdTarget(null); setPwdData(EMPTY_PWD); setPwdErrors({});
     setForgotModal(false); setForgotTarget(null); setForgotData(EMPTY_FORGOT); setForgotErrors({});
@@ -602,23 +193,27 @@ const ManageUsersModal = ({ show, onClose, showProfil = false }) => {
     onClose();
   };
 
-  if (show && panel === 'profil' && currentUser) {
-    return <MonProfilPanel user={currentUser} onClose={handleClose} onSaved={fetchUsers} />;
-  }
-
   if (!show) return null;
 
   // ── SUPPRESSION ──────────────────────────────────────────────────────────────
-  const handleDeleteClick   = (user) => setDeleteTarget(user);
+  const handleDeleteClick   = (u) => setDeleteTarget(u);
   const handleDeleteCancel  = () => setDeleteTarget(null);
   const handleDeleteConfirm = async () => {
     setDeleteLoading(true);
     try {
       const r = await deleteUser(deleteTarget.id);
-      if (r.success) { setTableNotif({ type: 'success', message: r.message || 'Utilisateur supprimé' }); fetchUsers(); }
-      else setTableNotif({ type: 'error', message: r.error || 'Erreur de suppression' });
-    } catch { setTableNotif({ type: 'error', message: 'Erreur de suppression' }); }
-    finally { setDeleteLoading(false); setDeleteTarget(null); }
+      if (r.success) {
+        setTableNotif({ type: 'success', message: r.message || 'Utilisateur supprimé' });
+        fetchUsers();
+      } else {
+        setTableNotif({ type: 'error', message: r.error || 'Erreur de suppression' });
+      }
+    } catch {
+      setTableNotif({ type: 'error', message: 'Erreur de suppression' });
+    } finally {
+      setDeleteLoading(false);
+      setDeleteTarget(null);
+    }
   };
 
   // ── CRÉATION ─────────────────────────────────────────────────────────────────
@@ -629,8 +224,10 @@ const ManageUsersModal = ({ show, onClose, showProfil = false }) => {
     if (name === 'password' || name === 'confirmPassword') {
       const pwd  = name === 'password'        ? value : createData.password;
       const conf = name === 'confirmPassword' ? value : createData.confirmPassword;
-      if (conf && pwd !== conf) setCreateErrors(p => ({ ...p, confirmPassword: 'Les mots de passe ne correspondent pas' }));
-      else setCreateErrors(p => ({ ...p, confirmPassword: '' }));
+      if (conf && pwd !== conf)
+        setCreateErrors(p => ({ ...p, confirmPassword: 'Les mots de passe ne correspondent pas' }));
+      else
+        setCreateErrors(p => ({ ...p, confirmPassword: '' }));
     }
   };
 
@@ -640,12 +237,17 @@ const ManageUsersModal = ({ show, onClose, showProfil = false }) => {
     if (!createData.prenoms.trim()) e.prenoms  = 'Les prénoms sont requis';
     if (!createData.email.trim())   e.email    = "L'email est requis";
     else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(createData.email)) e.email = 'Email invalide';
-    if (!createData.password) e.password = 'Le mot de passe est requis';
-    else if (createData.password.length < 6) e.password = 'Minimum 6 caractères';
-    if (!createData.confirmPassword) e.confirmPassword = 'Veuillez confirmer';
+    if (!createData.password)                       e.password        = 'Le mot de passe est requis';
+    else if (createData.password.length < 6)        e.password        = 'Minimum 6 caractères';
+    if (!createData.confirmPassword)                e.confirmPassword = 'Veuillez confirmer';
     else if (createData.password !== createData.confirmPassword) e.confirmPassword = 'Ne correspond pas';
     if (!createData.categorie) e.categorie = 'Sélectionner une catégorie';
     return e;
+  };
+
+  const resetCreate = () => {
+    setCreateData(EMPTY_CREATE); setCreateErrors({}); setCreateNotif(null);
+    setCreateAvatarFile(null); setCreatePreview(null);
   };
 
   const handleSubmitCreate = async (e) => {
@@ -661,13 +263,11 @@ const ManageUsersModal = ({ show, onClose, showProfil = false }) => {
       formPayload.append('password',  createData.password);
       formPayload.append('categorie', createData.categorie);
       if (createAvatarFile) formPayload.append('image', createAvatarFile);
+
       const r = await createUser(formPayload);
       if (r.success) {
         setCreateNotif({ type: 'success', message: r.message || 'Compte créé avec succès !' });
-        setTimeout(() => {
-          setCreateData(EMPTY_CREATE); setCreateErrors({}); setCreateNotif(null);
-          setCreateAvatarFile(null); setCreatePreview(null); setPanel(null); fetchUsers();
-        }, 1600);
+        setTimeout(() => { resetCreate(); setPanel(null); fetchUsers(); }, 1600);
       } else {
         if (r.errors) {
           const m = {};
@@ -679,49 +279,56 @@ const ManageUsersModal = ({ show, onClose, showProfil = false }) => {
         }
         setCreateLoading(false);
       }
-    } catch (err) { setCreateNotif({ type: 'error', message: err.message || 'Erreur réseau' }); setCreateLoading(false); }
+    } catch (err) {
+      setCreateNotif({ type: 'error', message: err.message || 'Erreur réseau' });
+      setCreateLoading(false);
+    }
   };
 
   // ── ÉDITION ──────────────────────────────────────────────────────────────────
-  const handleEdit = (user) => {
-    setPanel('edit'); setEditUser(user);
-    setFormData({ nom: user.nom || '', prenoms: user.prenoms || '', email: user.email || '', categorie: user.categorie || '' });
+  const handleEdit = (u) => {
+    setPanel('edit'); setEditUser(u);
+    setFormData({ nom: u.nom || '', prenoms: u.prenoms || '', email: u.email || '', categorie: u.categorie || '' });
   };
   const handleCancelEdit = () => { setPanel(null); setEditUser(null); setFormData(EMPTY_FORM); };
+
   const handleSubmitInfo = async (e) => {
     e.preventDefault();
     try {
       const r = await updateUser(editUser.id, formData);
       if (r.success) {
-        setTableNotif({ type: 'success', message: r.message || 'Modifié' });
+        setTableNotif({ type: 'success', message: r.message || 'Modifié avec succès' });
         handleCancelEdit(); fetchUsers();
         if (currentUser && editUser.id === currentUser.id) {
-          if (r.data?.user) {
-            setUser(r.data.user);
-            try { localStorage.setItem('user', JSON.stringify(r.data.user)); } catch {}
-          } else {
-            const updated = { ...currentUser, ...formData };
-            setUser(updated);
-            try { localStorage.setItem('user', JSON.stringify(updated)); } catch {}
-          }
+          const updated = r.data?.user || { ...currentUser, ...formData };
+          setUser(updated);
+          try { localStorage.setItem('user', JSON.stringify(updated)); } catch {}
         }
-      } else { setTableNotif({ type: 'error', message: r.error || 'Erreur' }); }
-    } catch { setTableNotif({ type: 'error', message: 'Erreur de modification' }); }
+      } else {
+        setTableNotif({ type: 'error', message: r.error || 'Erreur de modification' });
+      }
+    } catch {
+      setTableNotif({ type: 'error', message: 'Erreur de modification' });
+    }
   };
 
   // ── MOT DE PASSE ─────────────────────────────────────────────────────────────
   const openPwdModal  = (u) => { setPwdTarget(u); setPwdData(EMPTY_PWD); setPwdErrors({}); setPwdModal(true); };
-  const closePwdModal = () => { setPwdModal(false); setPwdTarget(null); setPwdData(EMPTY_PWD); setPwdErrors({}); };
+  const closePwdModal = ()  => { setPwdModal(false); setPwdTarget(null); setPwdData(EMPTY_PWD); setPwdErrors({}); };
+
   const validatePwd = () => {
     const e = {};
-    if (!pwdData.oldPassword) e.oldPassword = 'Ancien mot de passe requis';
-    if (!pwdData.newPassword) e.newPassword = 'Nouveau requis';
-    else if (pwdData.newPassword.length < 6) e.newPassword = 'Minimum 6 caractères';
-    if (pwdData.newPassword !== pwdData.confirmPassword) e.confirmPassword = 'Ne correspond pas';
+    if (!pwdData.oldPassword)                              e.oldPassword     = 'Ancien mot de passe requis';
+    if (!pwdData.newPassword)                              e.newPassword     = 'Nouveau requis';
+    else if (pwdData.newPassword.length < 6)               e.newPassword     = 'Minimum 6 caractères';
+    if (pwdData.newPassword !== pwdData.confirmPassword)   e.confirmPassword = 'Ne correspond pas';
     return e;
   };
+
   const handleSubmitPwd = async (e) => {
-    e.preventDefault(); const errs = validatePwd(); if (Object.keys(errs).length) { setPwdErrors(errs); return; }
+    e.preventDefault();
+    const errs = validatePwd();
+    if (Object.keys(errs).length) { setPwdErrors(errs); return; }
     setPwdLoading(true);
     try {
       const r = await updateUser(pwdTarget.id, { oldPassword: pwdData.oldPassword, password: pwdData.newPassword });
@@ -731,17 +338,22 @@ const ManageUsersModal = ({ show, onClose, showProfil = false }) => {
     finally { setPwdLoading(false); }
   };
 
+  // ── MOT DE PASSE OUBLIÉ ───────────────────────────────────────────────────────
   const openForgotModal  = (u) => { setForgotTarget(u); setForgotData(EMPTY_FORGOT); setForgotErrors({}); setForgotModal(true); };
-  const closeForgotModal = () => { setForgotModal(false); setForgotTarget(null); setForgotData(EMPTY_FORGOT); setForgotErrors({}); };
+  const closeForgotModal = ()  => { setForgotModal(false); setForgotTarget(null); setForgotData(EMPTY_FORGOT); setForgotErrors({}); };
+
   const validateForgot = () => {
     const e = {};
-    if (!forgotData.newPassword) e.newPassword = 'Requis';
-    else if (forgotData.newPassword.length < 6) e.newPassword = 'Minimum 6 caractères';
+    if (!forgotData.newPassword)                              e.newPassword     = 'Requis';
+    else if (forgotData.newPassword.length < 6)               e.newPassword     = 'Minimum 6 caractères';
     if (forgotData.newPassword !== forgotData.confirmPassword) e.confirmPassword = 'Ne correspond pas';
     return e;
   };
+
   const handleSubmitForgot = async (e) => {
-    e.preventDefault(); const errs = validateForgot(); if (Object.keys(errs).length) { setForgotErrors(errs); return; }
+    e.preventDefault();
+    const errs = validateForgot();
+    if (Object.keys(errs).length) { setForgotErrors(errs); return; }
     setForgotLoading(true);
     try {
       const r = await updateUser(forgotTarget.id, { password: forgotData.newPassword });
@@ -751,11 +363,15 @@ const ManageUsersModal = ({ show, onClose, showProfil = false }) => {
     finally { setForgotLoading(false); }
   };
 
+  // ─────────────────────────────────────────────────────────────────────────────
+  // RENDU
+  // ─────────────────────────────────────────────────────────────────────────────
   return (
     <>
       <div className="modal show d-block" style={{ backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 1050 }}>
         <div className="modal-dialog modal-xl modal-dialog-scrollable">
           <div className="modal-content shadow-lg">
+
             <div className="modal-header text-white" style={{ backgroundColor: '#800020' }}>
               <h5 className="modal-title d-flex align-items-center gap-2"><FaUsers /> Gestion des utilisateurs</h5>
               <button type="button" className="btn-close btn-close-white" onClick={handleClose} />
@@ -764,20 +380,21 @@ const ManageUsersModal = ({ show, onClose, showProfil = false }) => {
             <div className="modal-body p-4">
               <Notif type={tableNotif?.type} message={tableNotif?.message} onClose={() => setTableNotif(null)} />
 
-              {/* ══════════ PANNEAU CRÉER ══════════ */}
+              {/* ══ PANNEAU CRÉER ══ */}
               {panel === 'create' && (
                 <div className="card mb-4 border-0 shadow-sm">
-                  <div className="card-header text-white d-flex justify-content-between align-items-center" style={{ backgroundColor: '#28a745' }}>
+                  <div className="card-header text-white d-flex justify-content-between align-items-center"
+                    style={{ backgroundColor: '#28a745' }}>
                     <span className="fw-bold"><FaUserPlus className="me-2" />Créer un nouveau compte</span>
                     <button className="btn btn-sm btn-light" type="button"
-                      onClick={() => { setPanel(null); setCreateData(EMPTY_CREATE); setCreateErrors({}); setCreateNotif(null); setCreateAvatarFile(null); setCreatePreview(null); }}>
-                      <FaTimes />
-                    </button>
+                      onClick={() => { setPanel(null); resetCreate(); }}><FaTimes /></button>
                   </div>
                   <div className="card-body">
                     <Notif type={createNotif?.type} message={createNotif?.message} onClose={() => setCreateNotif(null)} />
                     <form onSubmit={handleSubmitCreate} noValidate>
                       <div className="row g-3">
+
+                        {/* Photo */}
                         <div className="col-12 mb-1">
                           <label className="form-label fw-semibold">Photo de profil</label>
                           <div className="d-flex align-items-center gap-3">
@@ -795,12 +412,20 @@ const ManageUsersModal = ({ show, onClose, showProfil = false }) => {
                             </div>
                             <div className="d-flex flex-column gap-1">
                               <input type="file" accept="image/jpeg,image/png,image/gif,image/webp"
-                                className="form-control form-control-sm" style={{ maxWidth: 240 }} disabled={createLoading}
-                                onChange={(e) => { const file = e.target.files?.[0]; if (!file) return; setCreateAvatarFile(file); setCreatePreview(URL.createObjectURL(file)); e.target.value = ''; }} />
+                                className="form-control form-control-sm" style={{ maxWidth: 240 }}
+                                disabled={createLoading}
+                                onChange={(e) => {
+                                  const file = e.target.files?.[0];
+                                  if (!file) return;
+                                  setCreateAvatarFile(file);
+                                  setCreatePreview(URL.createObjectURL(file));
+                                  e.target.value = '';
+                                }} />
                               <div className="d-flex align-items-center gap-2">
                                 <small className="text-muted">JPG, PNG, GIF, WebP</small>
                                 {createPreview && (
-                                  <button type="button" className="btn btn-sm btn-outline-danger py-0 px-2" style={{ fontSize: 11 }}
+                                  <button type="button" className="btn btn-sm btn-outline-danger py-0 px-2"
+                                    style={{ fontSize: 11 }}
                                     onClick={() => { setCreateAvatarFile(null); setCreatePreview(null); }}>
                                     <FaTimes /> Supprimer
                                   </button>
@@ -809,37 +434,48 @@ const ManageUsersModal = ({ show, onClose, showProfil = false }) => {
                             </div>
                           </div>
                         </div>
+
                         <div className="col-md-4">
                           <label className="form-label fw-semibold" style={{ fontSize: 14 }}>Nom <span className="text-danger">*</span></label>
-                          <input type="text" name="nom" className={`form-control${createErrors.nom ? ' is-invalid' : ''}`}
-                            value={createData.nom} onChange={handleCreateChange} placeholder="Saisir votre nom" disabled={createLoading} />
+                          <input type="text" name="nom"
+                            className={`form-control${createErrors.nom ? ' is-invalid' : ''}`}
+                            value={createData.nom} onChange={handleCreateChange}
+                            placeholder="Saisir le nom" disabled={createLoading} />
                           {createErrors.nom && <div className="invalid-feedback">{createErrors.nom}</div>}
                         </div>
                         <div className="col-md-4">
                           <label className="form-label fw-semibold" style={{ fontSize: 14 }}>Prénoms <span className="text-danger">*</span></label>
-                          <input type="text" name="prenoms" className={`form-control${createErrors.prenoms ? ' is-invalid' : ''}`}
-                            value={createData.prenoms} onChange={handleCreateChange} placeholder="Saisir votre Prénoms" disabled={createLoading} />
+                          <input type="text" name="prenoms"
+                            className={`form-control${createErrors.prenoms ? ' is-invalid' : ''}`}
+                            value={createData.prenoms} onChange={handleCreateChange}
+                            placeholder="Saisir les prénoms" disabled={createLoading} />
                           {createErrors.prenoms && <div className="invalid-feedback">{createErrors.prenoms}</div>}
                         </div>
                         <div className="col-md-4">
                           <label className="form-label fw-semibold" style={{ fontSize: 14 }}>Email <span className="text-danger">*</span></label>
-                          <input type="email" name="email" className={`form-control${createErrors.email ? ' is-invalid' : ''}`}
-                            value={createData.email} onChange={handleCreateChange} placeholder="exemple@zomatel.mg" disabled={createLoading} />
+                          <input type="email" name="email"
+                            className={`form-control${createErrors.email ? ' is-invalid' : ''}`}
+                            value={createData.email} onChange={handleCreateChange}
+                            placeholder="exemple@zomatel.mg" disabled={createLoading} />
                           {createErrors.email && <div className="invalid-feedback">{createErrors.email}</div>}
                         </div>
                         <div className="col-md-4">
-                          <PwdInput label={<>Mot de passe <span className="text-danger">*</span></>} name="pwd_c" value={createData.password}
-                            onChange={(v) => handleCreateChange({ target: { name: 'password', value: v } })} error={createErrors.password} />
+                          <PwdInput label={<>Mot de passe <span className="text-danger">*</span></>}
+                            name="pwd_c" value={createData.password}
+                            onChange={(v) => handleCreateChange({ target: { name: 'password', value: v } })}
+                            error={createErrors.password} />
                         </div>
                         <div className="col-md-4">
-                          <PwdInput label={<>Confirmer le mot de passe <span className="text-danger">*</span></>} name="pwd_cc" value={createData.confirmPassword}
+                          <PwdInput label={<>Confirmer <span className="text-danger">*</span></>}
+                            name="pwd_cc" value={createData.confirmPassword}
                             onChange={(v) => handleCreateChange({ target: { name: 'confirmPassword', value: v } })}
                             error={createErrors.confirmPassword}
                             success={pwdMatch(createData.password, createData.confirmPassword) ? 'Identiques ✓' : null} />
                         </div>
                         <div className="col-md-4">
                           <label className="form-label fw-semibold" style={{ fontSize: 14 }}>Catégorie <span className="text-danger">*</span></label>
-                          <select name="categorie" className={`form-select${createErrors.categorie ? ' is-invalid' : ''}`}
+                          <select name="categorie"
+                            className={`form-select${createErrors.categorie ? ' is-invalid' : ''}`}
                             value={createData.categorie} onChange={handleCreateChange} disabled={createLoading}>
                             <option value="">— Sélectionner —</option>
                             <option value="Resto">Resto</option>
@@ -854,7 +490,7 @@ const ManageUsersModal = ({ show, onClose, showProfil = false }) => {
                             {createLoading ? <><span className="spinner-border spinner-border-sm me-1" />Création…</> : <><FaCheck className="me-1" />Valider</>}
                           </button>
                           <button type="button" className="btn btn-secondary" disabled={createLoading}
-                            onClick={() => { setPanel(null); setCreateData(EMPTY_CREATE); setCreateErrors({}); setCreateNotif(null); setCreateAvatarFile(null); setCreatePreview(null); }}>
+                            onClick={() => { setPanel(null); resetCreate(); }}>
                             <FaTimes className="me-1" />Annuler
                           </button>
                         </div>
@@ -864,16 +500,18 @@ const ManageUsersModal = ({ show, onClose, showProfil = false }) => {
                 </div>
               )}
 
-              {/* ══════════ PANNEAU ÉDITER ══════════ */}
+              {/* ══ PANNEAU ÉDITER ══ */}
               {panel === 'edit' && editUser && (
                 <div className="card mb-4 border-0 shadow-sm">
-                  <div className="card-header text-white d-flex justify-content-between align-items-center" style={{ backgroundColor: '#1a6bbf' }}>
+                  <div className="card-header text-white d-flex justify-content-between align-items-center"
+                    style={{ backgroundColor: '#1a6bbf' }}>
                     <span className="fw-bold"><FaPencilAlt className="me-2" />Modifier : {editUser.prenoms} {editUser.nom}</span>
                     <button className="btn btn-sm btn-light" type="button" onClick={handleCancelEdit}><FaTimes /></button>
                   </div>
                   <div className="card-body">
                     <form onSubmit={handleSubmitInfo}>
                       <div className="row g-3">
+                        {/* Photo édition */}
                         <div className="col-12 mb-3">
                           <label className="form-label fw-semibold">Photo de profil</label>
                           <div className="d-flex align-items-center gap-3">
@@ -884,10 +522,12 @@ const ManageUsersModal = ({ show, onClose, showProfil = false }) => {
                               backgroundSize: 'cover', backgroundPosition: 'center',
                               fontSize: 18, fontWeight: 600, color: '#6c757d',
                             }}>
-                              {!getUserImageUrl(editUser) && `${(editUser.prenoms || '').charAt(0)}${(editUser.nom || '').charAt(0)}`.toUpperCase()}
+                              {!getUserImageUrl(editUser) &&
+                                `${(editUser.prenoms || '').charAt(0)}${(editUser.nom || '').charAt(0)}`.toUpperCase()}
                             </div>
                             <div>
-                              <input type="file" accept="image/*" className="form-control form-control-sm" style={{ maxWidth: 220 }}
+                              <input type="file" accept="image/*"
+                                className="form-control form-control-sm" style={{ maxWidth: 220 }}
                                 onChange={async (e) => {
                                   const f = e.target.files?.[0];
                                   if (f) {
@@ -909,21 +549,26 @@ const ManageUsersModal = ({ show, onClose, showProfil = false }) => {
                             </div>
                           </div>
                         </div>
+
                         <div className="col-md-3">
                           <label className="form-label fw-semibold" style={{ fontSize: 14 }}>Nom</label>
-                          <input className="form-control" value={formData.nom} required onChange={(e) => setFormData({ ...formData, nom: e.target.value })} />
+                          <input className="form-control" value={formData.nom} required
+                            onChange={(e) => setFormData({ ...formData, nom: e.target.value })} />
                         </div>
                         <div className="col-md-3">
                           <label className="form-label fw-semibold" style={{ fontSize: 14 }}>Prénoms</label>
-                          <input className="form-control" value={formData.prenoms} required onChange={(e) => setFormData({ ...formData, prenoms: e.target.value })} />
+                          <input className="form-control" value={formData.prenoms} required
+                            onChange={(e) => setFormData({ ...formData, prenoms: e.target.value })} />
                         </div>
                         <div className="col-md-3">
                           <label className="form-label fw-semibold" style={{ fontSize: 14 }}>Email</label>
-                          <input type="email" className="form-control" value={formData.email} required onChange={(e) => setFormData({ ...formData, email: e.target.value })} />
+                          <input type="email" className="form-control" value={formData.email} required
+                            onChange={(e) => setFormData({ ...formData, email: e.target.value })} />
                         </div>
                         <div className="col-md-3">
                           <label className="form-label fw-semibold" style={{ fontSize: 14 }}>Catégorie</label>
-                          <select className="form-select" value={formData.categorie} onChange={(e) => setFormData({ ...formData, categorie: e.target.value })}>
+                          <select className="form-select" value={formData.categorie}
+                            onChange={(e) => setFormData({ ...formData, categorie: e.target.value })}>
                             <option value="Resto">Resto</option>
                             <option value="snack">Snack</option>
                             <option value="detente">Détente</option>
@@ -932,8 +577,12 @@ const ManageUsersModal = ({ show, onClose, showProfil = false }) => {
                         </div>
                         <div className="col-12 d-flex flex-wrap gap-2">
                           <button type="submit" className="btn btn-primary"><FaCheck className="me-1" />Enregistrer</button>
-                          <button type="button" className="btn btn-success text-white" onClick={() => openPwdModal(editUser)}><FaKey className="me-1" />Changer le mot de passe</button>
-                          <button type="button" className="btn btn-outline-danger" onClick={() => openForgotModal(editUser)}><FaUnlock className="me-1" />Mot de passe oublié</button>
+                          <button type="button" className="btn btn-success text-white" onClick={() => openPwdModal(editUser)}>
+                            <FaKey className="me-1" />Changer le mot de passe
+                          </button>
+                          <button type="button" className="btn btn-outline-danger" onClick={() => openForgotModal(editUser)}>
+                            <FaUnlock className="me-1" />Mot de passe oublié
+                          </button>
                         </div>
                       </div>
                     </form>
@@ -941,6 +590,7 @@ const ManageUsersModal = ({ show, onClose, showProfil = false }) => {
                 </div>
               )}
 
+              {/* Bouton créer */}
               {panel === null && (
                 <div className="d-flex justify-content-end mb-3">
                   <button className="btn btn-success d-flex align-items-center gap-2" onClick={() => setPanel('create')}>
@@ -949,6 +599,7 @@ const ManageUsersModal = ({ show, onClose, showProfil = false }) => {
                 </div>
               )}
 
+              {/* Tableau */}
               {loading ? (
                 <div className="text-center py-5">
                   <div className="spinner-border" style={{ color: '#800020' }} role="status" />
@@ -961,8 +612,8 @@ const ManageUsersModal = ({ show, onClose, showProfil = false }) => {
                   <table className="table table-hover table-striped align-middle mb-0">
                     <thead style={{ backgroundColor: '#800020', color: 'white' }}>
                       <tr>
-                        <th>#</th><th>Photo</th><th>Nom</th><th>Prénoms</th><th>Email</th><th>Catégorie</th>
-                        <th className="text-center">Actions</th>
+                        <th>#</th><th>Photo</th><th>Nom</th><th>Prénoms</th>
+                        <th>Email</th><th>Catégorie</th><th className="text-center">Actions</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -977,7 +628,8 @@ const ManageUsersModal = ({ show, onClose, showProfil = false }) => {
                               backgroundSize: 'cover', backgroundPosition: 'center',
                               fontSize: 14, fontWeight: 600, color: '#6c757d',
                             }}>
-                              {!getUserImageUrl(u) && `${(u.prenoms || '').charAt(0)}${(u.nom || '').charAt(0)}`.toUpperCase()}
+                              {!getUserImageUrl(u) &&
+                                `${(u.prenoms || '').charAt(0)}${(u.nom || '').charAt(0)}`.toUpperCase()}
                             </div>
                           </td>
                           <td className="fw-semibold">{u.nom}</td>
@@ -985,8 +637,12 @@ const ManageUsersModal = ({ show, onClose, showProfil = false }) => {
                           <td className="text-muted small">{u.email}</td>
                           <td><span className={badgeClass(u.categorie)}>{u.categorie}</span></td>
                           <td className="text-center">
-                            <button className="btn btn-sm btn-primary me-1" title="Modifier" onClick={() => handleEdit(u)}><FaPencilAlt /></button>
-                            <button className="btn btn-sm btn-danger" title="Supprimer" onClick={() => handleDeleteClick(u)}><FaTrashAlt /></button>
+                            <button className="btn btn-sm btn-primary me-1" title="Modifier" onClick={() => handleEdit(u)}>
+                              <FaPencilAlt />
+                            </button>
+                            <button className="btn btn-sm btn-danger" title="Supprimer" onClick={() => handleDeleteClick(u)}>
+                              <FaTrashAlt />
+                            </button>
                           </td>
                         </tr>
                       ))}
@@ -1003,8 +659,22 @@ const ManageUsersModal = ({ show, onClose, showProfil = false }) => {
         </div>
       </div>
 
-      <DeleteConfirmModal user={deleteTarget} onConfirm={handleDeleteConfirm} onCancel={handleDeleteCancel} loading={deleteLoading} />
+      {/* ══ MON PROFIL — affiché par-dessus la modale principale ══ */}
+      {panel === 'profil' && currentUser && (
+        <UserProfils
+          user={currentUser}
+          onClose={() => setPanel(null)}
+          onSaved={() => { fetchUsers(); setPanel(null); }}
+        />
+      )}
 
+      {/* ══ SUPPRESSION ══ */}
+      <DeleteConfirmModal
+        user={deleteTarget} loading={deleteLoading}
+        onConfirm={handleDeleteConfirm} onCancel={handleDeleteCancel}
+      />
+
+      {/* ══ MOT DE PASSE ══ */}
       {pwdModal && (
         <div className="modal show d-block" style={{ backgroundColor: 'rgba(0,0,0,0.6)', zIndex: 1060 }}>
           <div className="modal-dialog modal-dialog-centered" style={{ maxWidth: 460 }}>
@@ -1026,7 +696,9 @@ const ManageUsersModal = ({ show, onClose, showProfil = false }) => {
                     error={pwdErrors.confirmPassword}
                     success={pwdMatch(pwdData.newPassword, pwdData.confirmPassword) ? 'Identiques ✓' : null} />
                   <div className="d-flex justify-content-end gap-2">
-                    <button type="button" className="btn btn-secondary" onClick={closePwdModal}><FaTimes className="me-1" />Annuler</button>
+                    <button type="button" className="btn btn-secondary" onClick={closePwdModal}>
+                      <FaTimes className="me-1" />Annuler
+                    </button>
                     <button type="submit" className="btn btn-primary" disabled={pwdLoading}>
                       {pwdLoading ? <span className="spinner-border spinner-border-sm me-1" /> : <FaCheck className="me-1" />}Confirmer
                     </button>
@@ -1038,6 +710,7 @@ const ManageUsersModal = ({ show, onClose, showProfil = false }) => {
         </div>
       )}
 
+      {/* ══ MOT DE PASSE OUBLIÉ ══ */}
       {forgotModal && (
         <div className="modal show d-block" style={{ backgroundColor: 'rgba(0,0,0,0.6)', zIndex: 1060 }}>
           <div className="modal-dialog modal-dialog-centered" style={{ maxWidth: 460 }}>
@@ -1049,7 +722,9 @@ const ManageUsersModal = ({ show, onClose, showProfil = false }) => {
                 <button className="btn-close btn-close-white" onClick={closeForgotModal} />
               </div>
               <div className="modal-body p-4">
-                <div className="alert alert-warning py-2 small mb-3"><strong>Attention :</strong> Remplace sans vérification de l'ancien.</div>
+                <div className="alert alert-warning py-2 small mb-3">
+                  <strong>Attention :</strong> Remplace sans vérification de l'ancien.
+                </div>
                 <form onSubmit={handleSubmitForgot} noValidate>
                   <PwdInput label="Nouveau mot de passe" name="fn" value={forgotData.newPassword}
                     onChange={(v) => setForgotData(p => ({ ...p, newPassword: v }))} error={forgotErrors.newPassword} />
@@ -1058,7 +733,9 @@ const ManageUsersModal = ({ show, onClose, showProfil = false }) => {
                     error={forgotErrors.confirmPassword}
                     success={pwdMatch(forgotData.newPassword, forgotData.confirmPassword) ? 'Identiques ✓' : null} />
                   <div className="d-flex justify-content-end gap-2">
-                    <button type="button" className="btn btn-secondary" onClick={closeForgotModal}><FaTimes className="me-1" />Annuler</button>
+                    <button type="button" className="btn btn-secondary" onClick={closeForgotModal}>
+                      <FaTimes className="me-1" />Annuler
+                    </button>
                     <button type="submit" className="btn btn-danger" disabled={forgotLoading}>
                       {forgotLoading ? <span className="spinner-border spinner-border-sm me-1" /> : <FaUnlock className="me-1" />}Réinitialiser
                     </button>

@@ -76,8 +76,8 @@ const CreerCompte = ({ showUserModal, setShowUserModal, onUserCreated }) => {
       e.target.value = "";
       return;
     }
-    if (file.size > 2 * 1024 * 1024) {
-      setNotif({ type: "error", message: "L'image ne doit pas dépasser 2 Mo" });
+    if (file.size > 30 * 1024 * 1024) {
+      setNotif({ type: "error", message: "L'image ne doit pas dépasser 30 Mo" });
       e.target.value = "";
       return;
     }
@@ -267,7 +267,7 @@ const CreerCompte = ({ showUserModal, setShowUserModal, onUserCreated }) => {
                       />
                     </label>
 
-                    <small className="text-muted">JPG, PNG, GIF, WebP — max 2 Mo</small>
+                    <small className="text-muted">JPG, PNG, GIF, WebP</small>
 
                     {/* Bouton supprimer l'image si sélectionnée */}
                     {avatarPreview && (
