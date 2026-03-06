@@ -314,7 +314,7 @@ const CreerCompte = ({ showUserModal, setShowUserModal, onUserCreated }) => {
                 </label>
                 <input type="email" name="email" className={inputClass("email")}
                   value={formData.email} onChange={handleChange}
-                  placeholder="exemple@zomatel.mg" disabled={loading} />
+                  placeholder="zomatel@zomatel.com" disabled={loading} />
                 {errors.email && <div className="invalid-feedback">{errors.email}</div>}
               </div>
 

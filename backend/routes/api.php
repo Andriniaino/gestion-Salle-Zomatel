@@ -17,6 +17,15 @@ use App\Http\Controllers\Api\ArticleImportController;
 |--------------------------------------------------------------------------
 */
 
+// Auth — routes publiques
+Route::post('login', [AuthController::class, 'login']);
+Route::post('logout', [AuthController::class, 'logout']);
+
+// ✅ FIX CRITIQUE : une seule route /me avec auth:sanctum
+// AVANT : deux routes /me en conflit (auth:sanctum + auth:api) — la 2ème écrasait la 1ère
+// APRÈS : une seule route /me
+Route::middleware('auth:sanctum')->get('/me', [AuthController::class, 'me']);
+
 // Users
 Route::get('/users', [UserController::class, 'index']);
 Route::get('/users/{id}', [UserController::class, 'show']);
@@ -24,17 +33,6 @@ Route::post('/users', [UserController::class, 'store']);
 Route::put('/users/{id}', [UserController::class, 'update']);
 Route::post('/users/{id}/avatar', [UserController::class, 'uploadAvatar']);
 Route::delete('/users/{id}', [UserController::class, 'destroy']);
-Route::apiResource('users', UserController::class);
-
-// Auth
-Route::post('login', [AuthController::class, 'login']);
-Route::post('logout', [AuthController::class, 'logout']);
-
-// ✅ /me secured avec AuthController (Laravel Sanctum)
-Route::middleware('auth:sanctum')->get('/me', [AuthController::class, 'me']);
-
-// ✅ /me secured (JWT alternative si besoin)
-Route::middleware('auth:api')->get('/me', [AuthController::class, 'me']);
 
 // Alias pour /api/auth/register
 Route::post('auth/register', [UserController::class, 'store']);
@@ -43,13 +41,13 @@ Route::post('auth/register', [UserController::class, 'store']);
 Route::prefix('articles')->group(function () {
     Route::get('/', [ArticleController::class, 'indexArticle']);
     Route::get('export/excel', [ArticleController::class, 'exportExcel']);
+    Route::get('/template', [ArticleImportController::class, 'downloadTemplate']);
+    Route::post('/import', [ArticleImportController::class, 'importFile']);
     Route::get('{id}', [ArticleController::class, 'show']);
     Route::post('/', [ArticleController::class, 'store']);
     Route::put('{id}', [ArticleController::class, 'update']);
     Route::patch('{id}/produit', [ArticleController::class, 'updateProduit']);
     Route::delete('{id}', [ArticleController::class, 'destroy']);
-    Route::get('/template', [ArticleImportController::class, 'downloadTemplate']);
-    Route::post('/import', [ArticleImportController::class, 'importFile']);
 });
 
 // ArticleWeeks

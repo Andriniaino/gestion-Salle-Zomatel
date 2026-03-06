@@ -22,16 +22,19 @@ const Login = () => {
 
   useEffect(() => {
     if (isAuthenticated && user) {
-      // Redirige automatiquement après connexion
-      if (user.categorie === "admin") {
-        navigate("/admin");
-      } else if (["resto", "snack", "detente"].includes(user.categorie)) {
-        navigate("/client");
+      const role = String(user.categorie || "").toLowerCase()
+      console.log("Redirection après login, rôle détecté :", role)
+
+      if (role === "admin") {
+        navigate("/admin")
+      } else if (["resto", "snack", "detente"].includes(role)) {
+        navigate("/client")
       } else {
-        navigate("/login"); // fallback
+        console.warn("Rôle utilisateur inconnu, retour à /login :", user.categorie)
+        navigate("/login") // fallback
       }
     }
-  }, [isAuthenticated, user, navigate]);
+  }, [isAuthenticated, user, navigate])
   
   
   
@@ -157,7 +160,7 @@ const Login = () => {
                   value={formData.mail}
                   onChange={handleChange}
                   required
-                  placeholder="votre@email.com"
+                  placeholder="zomatel@zomatel.com"
                   disabled={loading}
                   autoComplete="email"
                 />

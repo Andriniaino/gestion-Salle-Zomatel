@@ -73,6 +73,13 @@ const AjoutModal = ({
   const handleNumericInputChange = (e) => {
     const { name, value } = e.target
 
+    // ✅ Pour le champ ID, on autorise lettres + chiffres sans validation numérique
+    if (name === "id") {
+      setValidationErrors((prev) => ({ ...prev, id: "" }))
+      handleInputChange(e)
+      return
+    }
+
     if (value === "") {
       handleInputChange(e)
       setValidationErrors((prev) => ({ ...prev, [name]: "" }))

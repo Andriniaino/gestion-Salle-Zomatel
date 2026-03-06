@@ -7,20 +7,30 @@ const ProtectedRoute = ({ children, requiredRole }) => {
 
   // Au refresh, on attend la vérification /me avant de décider de rediriger.
   if (loading) {
-    return null
+    return (
+      <div className="d-flex justify-content-center align-items-center" style={{ minHeight: "100vh" }}>
+        <div className="spinner-border text-primary" role="status">
+          <span className="visually-hidden">Chargement...</span>
+        </div>
+      </div>
+    )
   }
 
-  if (!isAuthenticated) {
+  if (!isAuthenticated || !user) {
     return <Navigate to="/login" replace />
   }
 
   if (requiredRole) {
+    const userRole = String(user.categorie || "").toLowerCase()
+
     if (Array.isArray(requiredRole)) {
-      if (!requiredRole.includes(user.categorie)) {
+      const allowedRoles = requiredRole.map((r) => String(r).toLowerCase())
+      if (!allowedRoles.includes(userRole)) {
         return <Navigate to="/login" replace />
       }
     } else {
-      if (user.categorie !== requiredRole) {
+      const required = String(requiredRole).toLowerCase()
+      if (userRole !== required) {
         return <Navigate to="/login" replace />
       }
     }

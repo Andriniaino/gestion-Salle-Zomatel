@@ -15,7 +15,7 @@ class Article extends Model
     
     public $incrementing = false; // ID manuel
     
-    protected $keyType = 'int';
+    protected $keyType = 'string';
     
     public $timestamps = false; // ← AJOUTER CETTE LIGNE pour désactiver les timestamps
 
@@ -31,7 +31,7 @@ class Article extends Model
 
     // Casts pour les types de données
     protected $casts = [
-        'id' => 'integer',
+        'id' => 'string',
         'produit' => 'decimal:2',
         'prix' => 'decimal:2',
         'date' => 'date',

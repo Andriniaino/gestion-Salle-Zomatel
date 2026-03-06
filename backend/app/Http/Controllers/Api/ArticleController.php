@@ -21,9 +21,7 @@ class ArticleController extends Controller
         try {
             $search = $request->get('search');
             $export = new ArticlesExport($search);
-            
             $filename = 'Articles_' . date('Y-m-d_His') . '.xlsx';
-            
             return Excel::download($export, $filename);
         } catch (Exception $e) {
             return response()->json([
@@ -34,15 +32,30 @@ class ArticleController extends Controller
         }
     }
 
-    // Afficher tous les articles
-    public function indexArticle()
+    // ✅ FIX PRINCIPAL : Afficher les articles avec filtre optionnel par catégorie
+    // AVANT : Article::all() → ignorait totalement ?categorie=resto
+    // APRÈS : filtre LIKE '%resto%' si le paramètre categorie est présent
+    public function indexArticle(Request $request)
     {
         try {
-            $articles = Article::all();
+            $query = Article::query();
+
+            // ✅ Si le paramètre "categorie" est présent dans l'URL (?categorie=resto)
+            if ($request->has('categorie') && !empty($request->get('categorie'))) {
+                $categorie = $request->get('categorie');
+
+                // ✅ LIKE '%resto%' pour matcher "boisson/resto" ET "salle/resto"
+                // Cela résout le problème : le compte resto reçoit bien ses articles
+                $query->where('categorie', 'LIKE', '%' . $categorie . '%');
+            }
+
+            $articles = $query->get();
+
             return response()->json([
                 'success' => true,
                 'data' => $articles
             ]);
+
         } catch (Exception $e) {
             return response()->json([
                 'success' => false,
@@ -57,7 +70,7 @@ class ArticleController extends Controller
     {
         try {
             $validated = $request->validate([
-                'id' => 'required|integer|unique:article,id',
+                'id' => 'required|string|max:10|unique:article,id',
                 'categorie' => 'required|string|max:20',
                 'libelle' => 'required|string|max:100',
                 'produit' => 'required|numeric|min:0',
@@ -68,7 +81,6 @@ class ArticleController extends Controller
 
             $article = Article::create($validated);
 
-            // Créer une notification pour l'ajout d'article
             try {
                 $notification = Notification::create([
                     'article_id' => $article->id,
@@ -81,19 +93,9 @@ class ArticleController extends Controller
                     'heure_ajout' => Carbon::now()->format('H:i:s'),
                     'lu' => false,
                 ]);
-
-                // Rafraîchir la notification pour avoir toutes les données à jour
                 $notification->refresh();
-
-                // Émettre l'événement de notification (diffusion immédiate)
                 event(new NotificationCreated($notification));
-                
-                \Log::info('Notification créée et événement émis', [
-                    'notification_id' => $notification->id,
-                    'article_id' => $article->id
-                ]);
             } catch (Exception $e) {
-                // Logger l'erreur mais ne pas faire échouer la création d'article
                 \Log::error('Erreur lors de la création de notification: ' . $e->getMessage());
             }
 
@@ -109,7 +111,6 @@ class ArticleController extends Controller
                 'message' => 'Erreur de validation',
                 'errors' => $e->errors()
             ], 422);
-
         } catch (Exception $e) {
             return response()->json([
                 'success' => false,
@@ -119,25 +120,21 @@ class ArticleController extends Controller
         }
     }
 
-    // Afficher un article - UTILISER WHERE AU LIEU DE FIND
+    // Afficher un article
     public function show($id)
     {
         try {
-            // Utiliser where() pour éviter les problèmes de type
             $article = Article::where('id', $id)->first();
-            
             if (!$article) {
                 return response()->json([
                     'success' => false,
                     'message' => 'Article non trouvé'
                 ], 404);
             }
-            
             return response()->json([
                 'success' => true,
                 'data' => $article
             ]);
-
         } catch (Exception $e) {
             return response()->json([
                 'success' => false,
@@ -147,13 +144,11 @@ class ArticleController extends Controller
         }
     }
 
-    // Mettre à jour un article - UTILISER WHERE AU LIEU DE FIND
+    // Mettre à jour un article
     public function update(Request $request, $id)
     {
         try {
-            // Utiliser where() pour éviter les problèmes de type
             $article = Article::where('id', $id)->first();
-            
             if (!$article) {
                 return response()->json([
                     'success' => false,
@@ -184,7 +179,6 @@ class ArticleController extends Controller
                 'message' => 'Erreur de validation',
                 'errors' => $e->errors()
             ], 422);
-
         } catch (Exception $e) {
             return response()->json([
                 'success' => false,
@@ -199,7 +193,6 @@ class ArticleController extends Controller
     {
         try {
             $article = Article::where('id', $id)->first();
-            
             if (!$article) {
                 return response()->json([
                     'success' => false,
@@ -209,51 +202,35 @@ class ArticleController extends Controller
 
             $validated = $request->validate([
                 'produit' => 'required|numeric|min:0',
-                'date_ajout' => 'nullable|date', // Accepté mais non utilisé pour la notification
-                'heure_ajout' => 'nullable|date_format:H:i', // Accepté mais non utilisé pour la notification
+                'date_ajout' => 'nullable|date',
+                'heure_ajout' => 'nullable|date_format:H:i',
             ]);
 
             $ancienProduit = $article->produit;
-            
-            // Mettre à jour le produit ET la date avec la date du jour
             $dateDuJour = Carbon::now()->format('Y-m-d');
+
             $article->update([
                 'produit' => $validated['produit'],
-                'date' => $dateDuJour, // Mettre à jour la date avec la date du jour
+                'date' => $dateDuJour,
             ]);
             $article->refresh();
 
-            // Créer une notification uniquement si la quantité a augmenté
             if ($validated['produit'] > $ancienProduit) {
                 try {
-                    // Toujours utiliser la date et l'heure actuelles du serveur pour la notification
-                    $dateNotification = Carbon::now()->format('Y-m-d');
-                    $heureNotification = Carbon::now()->format('H:i:s');
-                    
                     $notification = Notification::create([
                         'article_id' => $article->id,
                         'categorie' => $article->categorie,
                         'libelle' => $article->libelle,
-                        'produit' => $validated['produit'] - $ancienProduit, // Quantité ajoutée
+                        'produit' => $validated['produit'] - $ancienProduit,
                         'unite' => $article->unite,
                         'prix' => $article->prix ?? 0,
-                        'date_ajout' => $dateNotification, // Date actuelle du serveur
-                        'heure_ajout' => $heureNotification, // Heure actuelle du serveur
+                        'date_ajout' => Carbon::now()->format('Y-m-d'),
+                        'heure_ajout' => Carbon::now()->format('H:i:s'),
                         'lu' => false,
                     ]);
-
-                    // Rafraîchir la notification pour avoir toutes les données à jour
                     $notification->refresh();
-
-                    // Émettre l'événement de notification (diffusion immédiate)
                     event(new NotificationCreated($notification));
-                    
-                    \Log::info('Notification créée lors de la mise à jour et événement émis', [
-                        'notification_id' => $notification->id,
-                        'article_id' => $article->id
-                    ]);
                 } catch (Exception $e) {
-                    // Logger l'erreur mais ne pas faire échouer la mise à jour
                     \Log::error('Erreur lors de la création de notification: ' . $e->getMessage());
                 }
             }
@@ -270,7 +247,6 @@ class ArticleController extends Controller
                 'message' => 'Erreur de validation',
                 'errors' => $e->errors()
             ], 422);
-
         } catch (Exception $e) {
             return response()->json([
                 'success' => false,
@@ -280,27 +256,22 @@ class ArticleController extends Controller
         }
     }
 
-    // Supprimer un article - UTILISER WHERE AU LIEU DE FIND
+    // Supprimer un article
     public function destroy($id)
     {
         try {
-            // Utiliser where() pour éviter les problèmes de type
             $article = Article::where('id', $id)->first();
-            
             if (!$article) {
                 return response()->json([
                     'success' => false,
                     'message' => 'Article non trouvé'
                 ], 404);
             }
-
             $article->delete();
-
             return response()->json([
                 'success' => true,
                 'message' => 'Article supprimé avec succès'
             ]);
-
         } catch (Exception $e) {
             return response()->json([
                 'success' => false,

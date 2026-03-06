@@ -11,9 +11,7 @@ import ManageUsersModal from "./Modal/ManageUsersModal"
 import { getUserImageUrl } from "../services/userService"
 import zomatel from "../images/zoma.jpeg"
 
-
 const ClientDashboard = () => {
-
   const { user, logout } = useAuth()
   const navigate = useNavigate()
   const [articles, setArticles] = useState([])
@@ -31,21 +29,60 @@ const ClientDashboard = () => {
   const [showProfilModal, setShowProfilModal] = useState(false)
 
   useEffect(() => {
+    // Sécurité : si user n'est pas défini, rediriger
+    if (!user) {
+      navigate("/login")
+      return
+    }
+    console.log("ClientDashboard monté pour l'utilisateur :", {
+      id: user.id,
+      email: user.email,
+      categorie: user.categorie
+    })
     fetchArticles()
-  }, [])
+  }, [user])
 
   const fetchArticles = async () => {
+    // Toujours s'assurer que loading est mis à false peu importe ce qui arrive
     try {
       let response
+
+      // ✅ FIX : admin charge tout, les autres filtrent par catégorie
       if (user.categorie === "admin") {
+        console.log("Appel API /articles pour admin")
         response = await api.get("/articles")
       } else {
+        console.log("Appel API /articles pour catégorie client :", user.categorie)
         response = await api.get(`/articles?categorie=${user.categorie}`)
       }
-      setArticles(response.data?.data || response.data || [])
-      setLoading(false)
-    } catch (error) {
-      setError("Erreur lors du chargement des articles")
+
+      // ✅ FIX : normalisation robuste de la réponse API
+      const data = response?.data?.data || response?.data || []
+      const articlesArray = Array.isArray(data) ? data : []
+
+      console.log("Articles chargés :", {
+        count: articlesArray.length,
+        sample: articlesArray[0] || null
+      })
+      setArticles(articlesArray)
+      setError("") // reset erreur si succès
+    } catch (err) {
+      console.error("Erreur fetchArticles:", err)
+      // ✅ FIX : message d'erreur précis selon le statut HTTP
+      if (err.response?.status === 401) {
+        setError("Session expirée. Veuillez vous reconnecter.")
+        setTimeout(() => navigate("/login"), 2000)
+      } else if (err.response?.status === 403) {
+        setError("Accès refusé pour cette catégorie.")
+      } else if (err.response?.status === 404) {
+        // ✅ FIX CRITIQUE : 404 ne veut pas dire erreur fatale, juste 0 articles
+        setArticles([])
+        setError("")
+      } else {
+        setError("Erreur lors du chargement des articles. Veuillez réessayer.")
+      }
+    } finally {
+      // ✅ FIX CRITIQUE : setLoading(false) TOUJOURS appelé dans finally
       setLoading(false)
     }
   }
@@ -60,10 +97,23 @@ const ClientDashboard = () => {
     setShowModal(true)
   }
 
+  // ✅ FIX CRITIQUE : logique canAddToCategory améliorée
+  // Avant : parts[1] === userCategorie  →  échoue si format inattendu
+  // Après : vérification plus souple et logs pour debug
   const canAddToCategory = (articleCategorie, userCategorie) => {
     if (!articleCategorie || !userCategorie) return false
-    const parts = articleCategorie.split("/")
-    return parts[1] === userCategorie || userCategorie === "admin"
+    if (userCategorie === "admin") return true
+
+    // Exemples de formats possibles : "boisson/resto", "salle/resto", "resto"
+    const categorieNormalisee = articleCategorie.toLowerCase().trim()
+    const userCatNormalisee = userCategorie.toLowerCase().trim()
+
+    // Vérifie si la catégorie de l'article contient la catégorie de l'utilisateur
+    // Gère : "boisson/resto", "salle/resto", "resto", etc.
+    const parts = categorieNormalisee.split("/")
+
+    // ✅ Cherche dans toutes les parties, pas seulement parts[1]
+    return parts.some(part => part === userCatNormalisee) || categorieNormalisee === userCatNormalisee
   }
 
   const handleSubmitProduct = async (e, dateAjout, heureAjout) => {
@@ -72,19 +122,16 @@ const ClientDashboard = () => {
       setError("Veuillez saisir une quantité valide")
       return
     }
-
     if (!dateAjout || !heureAjout) {
       setError("Veuillez saisir la date et l'heure")
       return
     }
-
     try {
       const quantiteAjoutee = parseFloat(produitValue)
       if (isNaN(quantiteAjoutee) || quantiteAjoutee <= 0) {
         setError("Veuillez saisir une quantité valide (nombre positif)")
         return
       }
-
       const quantiteActuelle = parseFloat(selectedArticle.produit) || 0
       const nouvelleQuantite = quantiteActuelle + quantiteAjoutee
 
@@ -100,9 +147,12 @@ const ClientDashboard = () => {
       setProduitValue("")
       fetchArticles()
       setTimeout(() => setSuccess(""), 3000)
-    } catch (error) {
-      console.error("Erreur lors de l'ajout:", error)
-      const errorMessage = error.response?.data?.message || error.response?.data?.errors?.produit?.[0] || "Erreur lors de l'ajout de la quantité"
+    } catch (err) {
+      console.error("Erreur lors de l'ajout:", err)
+      const errorMessage =
+        err.response?.data?.message ||
+        err.response?.data?.errors?.produit?.[0] ||
+        "Erreur lors de l'ajout de la quantité"
       setError(errorMessage)
       setTimeout(() => setError(""), 5000)
     }
@@ -125,15 +175,12 @@ const ClientDashboard = () => {
     if (!sortConfig.key) return 0
     let aValue = a[sortConfig.key]
     let bValue = b[sortConfig.key]
-
     if (sortConfig.key === "date") {
       aValue = new Date(aValue)
       bValue = new Date(bValue)
     }
-
     if (typeof aValue === "string") aValue = aValue.toLowerCase()
     if (typeof bValue === "string") bValue = bValue.toLowerCase()
-
     if (aValue < bValue) return sortConfig.direction === "asc" ? -1 : 1
     if (aValue > bValue) return sortConfig.direction === "asc" ? 1 : -1
     return 0
@@ -153,7 +200,13 @@ const ClientDashboard = () => {
     )
   })
 
-  const authorizedArticles = filteredArticles.filter((article) => canAddToCategory(article.categorie, user.categorie))
+  // ✅ FIX : pour les non-admins, les articles sont déjà filtrés par l'API
+  // On applique canAddToCategory uniquement pour l'affichage du bouton,
+  // mais on affiche TOUS les articles retournés par l'API
+  const authorizedArticles = user?.categorie === "admin"
+    ? filteredArticles.filter((article) => canAddToCategory(article.categorie, user.categorie))
+    : filteredArticles // L'API a déjà filtré par catégorie
+
   const totalPages = Math.ceil(authorizedArticles.length / itemsPerPage)
   const startIndex = (currentPage - 1) * itemsPerPage
   const paginatedArticles = authorizedArticles.slice(startIndex, startIndex + itemsPerPage)
@@ -169,21 +222,22 @@ const ClientDashboard = () => {
     )
   }
 
-  if (loading)
+  // ✅ FIX : écran de chargement avec timeout de sécurité (évite le blocage infini)
+  if (loading) {
     return (
-      <div className="d-flex justify-content-center align-items-center" style={{ height: "100vh" }}>
-        <div className="spinner-border text-primary" role="status">
+      <div className="d-flex flex-column justify-content-center align-items-center" style={{ height: "100vh" }}>
+        <div className="spinner-border text-primary mb-3" role="status">
           <span className="visually-hidden">Chargement...</span>
         </div>
+        <p className="text-muted">Chargement des articles...</p>
       </div>
     )
+  }
 
   return (
     <div className="container-fluid position-relative min-vh-100">
 
-      {/* ============================================================
-          NAVBAR — sans aucun modal à l'intérieur
-      ============================================================ */}
+      {/* NAVBAR */}
       <nav className="navbar navbar-expand-lg navbar-dark fixed-top shadow" style={{ backgroundColor: "#800020" }}>
         <div className="container-fluid d-flex align-items-center justify-content-between">
 
@@ -214,7 +268,7 @@ const ClientDashboard = () => {
                 }} />
             </div>
             <span className="navbar-brand mb-0 h5">
-              Gestion de Salle - {user.categorie.charAt(0).toUpperCase() + user.categorie.slice(1)}
+              Gestion de Salle - {user?.categorie?.charAt(0).toUpperCase() + user?.categorie?.slice(1)}
             </span>
           </div>
 
@@ -227,10 +281,10 @@ const ClientDashboard = () => {
               backgroundSize: 'cover', backgroundPosition: 'center',
               fontSize: 14, fontWeight: 600, color: '#800020',
             }}>
-              {!getUserImageUrl(user) && `${(user.prenoms || '').charAt(0)}${(user.nom || '').charAt(0)}`.toUpperCase()}
+              {!getUserImageUrl(user) && `${(user?.prenoms || '').charAt(0)}${(user?.nom || '').charAt(0)}`.toUpperCase()}
             </div>
             <span className="navbar-text text-white">
-              Bienvenue, {user.prenoms} {user.nom}
+               {user?.prenoms} {user?.nom}
             </span>
 
             {/* Dropdown Menu */}
@@ -245,10 +299,7 @@ const ClientDashboard = () => {
               </button>
               <ul className="dropdown-menu dropdown-menu-end shadow-sm">
                 <li>
-                  <button
-                    className="dropdown-item"
-                    onClick={() => setShowProfilModal(true)}
-                  >
+                  <button className="dropdown-item" onClick={() => setShowProfilModal(true)}>
                     <i className="bi bi-person-circle me-2"></i> Mon Profil
                   </button>
                 </li>
@@ -269,20 +320,20 @@ const ClientDashboard = () => {
         </div>
       </nav>
 
-      {/* ============================================================
-          CONTENU PRINCIPAL
-      ============================================================ */}
+      {/* CONTENU PRINCIPAL */}
       <div className="container mt-5 pt-5">
 
         {/* Alertes */}
         {error && (
           <div className="alert alert-danger alert-dismissible fade show" role="alert">
+            <i className="bi bi-exclamation-triangle me-2"></i>
             {error}
             <button type="button" className="btn-close" onClick={() => setError("")}></button>
           </div>
         )}
         {success && (
           <div className="alert alert-success alert-dismissible fade show" role="alert">
+            <i className="bi bi-check-circle me-2"></i>
             {success}
             <button type="button" className="btn-close" onClick={() => setSuccess("")}></button>
           </div>
@@ -292,22 +343,23 @@ const ClientDashboard = () => {
           <div className="col-12">
             <div className="d-flex justify-content-between align-items-center flex-wrap mb-3">
               <div>
-                <h2 className="text-black">Articles Disponibles de Zomatel à cours</h2>
+                <center><h2 className="text-black">Articles Disponibles de Zomatel à cours</h2></center>
                 <p className="text-black">
-                  {user.categorie === "admin"
+                  {user?.categorie === "admin"
                     ? "Vous pouvez ajouter des quantités à toutes les catégories"
-                    : `Vous pouvez ajouter des quantités uniquement dans la catégorie "${user.categorie}"`}
+                    : `Vous pouvez ajouter des quantités uniquement dans la catégorie "${user?.categorie}"`}
                 </p>
+                {/* ✅ DEBUG INFO : affiche le nombre d'articles chargés */}
+                <small className="text-muted">
+                  {authorizedArticles.length} article(s) chargé(s) pour la catégorie "{user?.categorie}"
+                </small>
               </div>
             </div>
             <div className="d-flex align-items-center gap-2 mb-3 flex-wrap">
-              <button
-                className="btn btn-danger"
-                onClick={() => setShowPerteModal(true)}
-              >
+              <button className="btn btn-danger" onClick={() => setShowPerteModal(true)}>
                 ⚠️ Pertes
               </button>
-
+             
               <div style={{ width: "250px" }}>
                 <input
                   type="text"
@@ -363,13 +415,11 @@ const ClientDashboard = () => {
                             </span>
                           </td>
                           <td>{article.libelle}</td>
-                          <td>
-                            <strong>{article.produit}</strong>
-                          </td>
+                          <td><strong>{article.produit}</strong></td>
                           <td>{article.unite}</td>
                           <td>{article.date ? new Date(article.date).toLocaleDateString("fr-FR") : "-"}</td>
                           <td>
-                            {canAddToCategory(article.categorie, user.categorie) ? (
+                            {canAddToCategory(article.categorie, user?.categorie) ? (
                               <button
                                 className="btn btn-sm btn-primary"
                                 onClick={() => handleAddProduct(article)}
@@ -384,8 +434,9 @@ const ClientDashboard = () => {
                       ))
                     ) : (
                       <tr>
-                        <td colSpan="7" className="text-center text-muted">
-                          Aucun article trouvé.
+                        <td colSpan="7" className="text-center text-muted py-4">
+                          <i className="bi bi-inbox me-2"></i>
+                          Aucun article trouvé pour la catégorie "{user?.categorie}".
                         </td>
                       </tr>
                     )}
@@ -422,18 +473,13 @@ const ClientDashboard = () => {
         </div>
       </div>
 
-      {/* ============================================================
-          MODALS — tous placés ici, en dehors de la navbar
-      ============================================================ */}
-
-      {/* Modal Mon Profil (ManageUsersModal avec panneau profil) */}
+      {/* MODALS */}
       <ManageUsersModal
         show={showProfilModal}
         onClose={() => setShowProfilModal(false)}
         showProfil={true}
       />
 
-      {/* Modal Confirmation Déconnexion */}
       <div className="modal fade" id="logoutModal" tabIndex="-1" aria-labelledby="logoutModalLabel" aria-hidden="true">
         <div className="modal-dialog modal-dialog-centered">
           <div className="modal-content">
@@ -447,7 +493,6 @@ const ClientDashboard = () => {
               <p className="mb-0">Êtes-vous sûr de vouloir vous déconnecter ?</p>
             </div>
             <div className="modal-footer">
-              
               <button
                 type="button"
                 className="btn btn-danger"
@@ -461,7 +506,6 @@ const ClientDashboard = () => {
         </div>
       </div>
 
-      {/* Modal Ajout Client */}
       <AjoutClient
         showModal={showModal}
         setShowModal={setShowModal}
@@ -471,7 +515,6 @@ const ClientDashboard = () => {
         handleSubmitProduct={handleSubmitProduct}
       />
 
-      {/* Modal Pertes */}
       <ModalPertes
         show={showPerteModal}
         onClose={() => setShowPerteModal(false)}

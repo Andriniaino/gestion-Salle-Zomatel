@@ -72,7 +72,7 @@ class PerteController extends Controller
     {
         try {
             $request->validate([
-                'article_id' => 'required|integer',
+                'article_id' => 'required|string|max:10',
                 'categorie'  => 'required|string|max:50',
                 'produit'    => 'required|numeric',
                 'commentaire'=> 'nullable|string',

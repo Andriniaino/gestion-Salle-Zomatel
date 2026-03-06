@@ -23,7 +23,7 @@ class ArticleWeek extends Model
 
     // Casts pour les types de données
     protected $casts = [
-        'article_id' => 'integer',
+        'article_id' => 'string',
         'produit' => 'decimal:2',
         'date' => 'date',
         'semaine' => 'integer',

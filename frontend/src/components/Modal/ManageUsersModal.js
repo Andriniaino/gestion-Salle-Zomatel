@@ -456,7 +456,7 @@ const ManageUsersModal = ({ show, onClose, showProfil = false }) => {
                           <input type="email" name="email"
                             className={`form-control${createErrors.email ? ' is-invalid' : ''}`}
                             value={createData.email} onChange={handleCreateChange}
-                            placeholder="exemple@zomatel.mg" disabled={createLoading} />
+                            placeholder="zomatel@zomatel.com" disabled={createLoading} />
                           {createErrors.email && <div className="invalid-feedback">{createErrors.email}</div>}
                         </div>
                         <div className="col-md-4">

@@ -22,15 +22,18 @@ export const AuthProvider = ({ children }) => {
     api.get("/me")
       .then(res => {
         if (res.data) {
+          console.log("AuthContext /me succès :", res.data);
           setUser(res.data);
           localStorage.setItem("user", JSON.stringify(res.data));
         } else {
+          console.warn("AuthContext /me ne renvoie pas d'utilisateur, nettoyage du cache");
           setUser(null);
           localStorage.removeItem("user");
           localStorage.removeItem("token");
         }
       })
       .catch(() => {
+        console.error("AuthContext /me erreur, token probablement invalide");
         if (!cachedUser) {
           setUser(null);
           localStorage.removeItem("user");
@@ -42,6 +45,7 @@ export const AuthProvider = ({ children }) => {
 
   const login = async (credentials) => {
     const res = await api.post("/login", credentials);
+    console.log("Réponse API /login :", res.data);
     if (res.data.success) {
       const token = res.data.token || res.data.access_token;
       if (token) localStorage.setItem("token", token);

@@ -73,7 +73,7 @@ class NotificationController extends Controller
     public function store(Request $request)
 {
     $request->validate([
-        'article_id' => 'required|integer',
+        'article_id' => 'required|string|max:10',
         'categorie' => 'required|string|max:100',
         'libelle' => 'required|string|max:100',
         'produit' => 'required|numeric',

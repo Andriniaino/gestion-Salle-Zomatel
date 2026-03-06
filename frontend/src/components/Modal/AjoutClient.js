@@ -43,10 +43,10 @@ const AjoutClient = ({
       return
     }
 
-    if (!/^\d*\.?\d*$/.test(value)) {
+    /*if (!/^\d*\.?\d*$/.test(value)) {
       setQuantiteError("⚠️ Seuls les chiffres sont autorisés")
       return
-    }
+    }*/
 
     if (parseFloat(value) <= 0) {
       setQuantiteError("⚠️ La quantité doit être supérieure à zéro")

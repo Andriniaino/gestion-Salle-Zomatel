@@ -87,7 +87,7 @@ class ArticleWeekController extends Controller
     {
         try {
             $validated = $request->validate([
-                'article_id' => 'required|integer',
+                'article_id' => 'required|string|max:10',
                 'categorie' => 'required|string|max:100',
                 'libelle' => 'required|string|max:100',
                 'produit' => 'required|numeric|min:0',
@@ -161,7 +161,7 @@ class ArticleWeekController extends Controller
             }
 
             $validated = $request->validate([
-                'article_id' => 'sometimes|required|integer',
+                'article_id' => 'sometimes|required|string|max:10',
                 'categorie' => 'sometimes|required|string|max:100',
                 'libelle' => 'sometimes|required|string|max:100',
                 'produit' => 'sometimes|required|numeric|min:0',

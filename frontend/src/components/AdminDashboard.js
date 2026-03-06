@@ -168,7 +168,7 @@ const AdminDashboard = () => {
     const produitNum = formDataArticle.produit === "" || formDataArticle.produit == null
       ? 0 : parseNumber(formDataArticle.produit)
     const prixNum = parseNumber(formDataArticle.prix)
-    const idNum = formDataArticle.id !== "" ? parseNumber(formDataArticle.id) : null
+    const idValue = formDataArticle.id ? String(formDataArticle.id).trim() : ""
 
     if (produitNum == null || produitNum < 0) {
       showToast("Le champ Quantité ne peut pas être négatif.", "warning")
@@ -178,12 +178,17 @@ const AdminDashboard = () => {
       showToast("Le champ Prix doit être un nombre positif.", "warning")
       setSaveLoading(false); return
     }
-    if (formDataArticle.id !== "" && (!Number.isInteger(idNum) || idNum <= 0)) {
-      showToast("Si vous fournissez un ID, il doit être un entier positif.", "warning")
-      setSaveLoading(false); return
-    }
-    if (!editingArticle && formDataArticle.id !== "") {
-      const exists = articles.some((a) => String(a.id) === String(formDataArticle.id))
+    // ✅ Validation de l'ID côté client pour la création uniquement (alphanumérique, max 10 caractères)
+    if (!editingArticle) {
+      if (!idValue) {
+        showToast("L'ID est obligatoire.", "warning")
+        setSaveLoading(false); return
+      }
+      if (idValue.length > 10) {
+        showToast("L'ID ne doit pas dépasser 10 caractères.", "warning")
+        setSaveLoading(false); return
+      }
+      const exists = articles.some((a) => String(a.id) === idValue)
       if (exists) {
         showToast("Cet ID existe déjà.", "warning")
         setSaveLoading(false); return
@@ -191,7 +196,8 @@ const AdminDashboard = () => {
     }
 
     const payload = {
-      ...(idNum != null ? { id: idNum } : {}),
+      // ✅ On envoie l'ID uniquement lors de la création, sous forme de chaîne
+      ...(!editingArticle ? { id: idValue } : {}),
       categorie: formDataArticle.categorie,
       libelle: formDataArticle.libelle,
       produit: produitNum,
