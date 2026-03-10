@@ -129,60 +129,51 @@ export const useNotifications = () => {
 
     // Se connecter au canal WebSocket
     let channel = null
-    
+    let connection = null
+
     try {
       channel = echo.channel("notifications")
-      
-      // Vérifier l'état de la connexion
-      const checkConnection = () => {
-        try {
-          if (echo.connector && echo.connector.pusher && echo.connector.pusher.connection) {
-            const state = echo.connector.pusher.connection.state
-            if (state === "connected" || state === "connecting") {
-              setIsConnected(true)
-              console.log("🟢 État WebSocket:", state)
-            } else {
-              setIsConnected(false)
-              console.log("🟡 État WebSocket:", state)
-            }
-          }
-        } catch (error) {
-          console.warn("⚠️ Erreur lors de la vérification de la connexion:", error)
+
+      // Écouter les nouvelles notifications en temps réel
+      // IMPORTANT: on attache le listener même si la connexion WebSocket
+      // n'est pas encore "prête" au moment du montage (sinon ça marche après refresh seulement).
+      channel.listen(".notification.created", (notificationData) => {
+        const payload = notificationData?.notification ?? notificationData
+        console.log("📩 Nouvelle notification reçue en temps réel:", payload)
+
+        if (!payload || payload.id == null) return
+
+        // Ajouter la nouvelle notification
+        setNotifications((prev) => {
+          const exists = prev.some((n) => n.id === payload.id)
+          if (exists) return prev
+          return [payload, ...prev]
+        })
+
+        // Incrémenter le compteur si la notification n'est pas lue
+        if (!payload.lu) {
+          setUnreadCount((prev) => prev + 1)
         }
-      }
 
-      // Vérifier immédiatement
-      checkConnection()
+        // Déclencher un événement personnalisé pour notifier les composants (comme AdminDashboard)
+        window.dispatchEvent(new CustomEvent("newNotificationReceived", { detail: payload }))
+      })
 
-      // Écouter les événements de connexion (avec vérification de sécurité)
+      // Gestion de l'état de connexion (optionnelle)
       if (echo.connector && echo.connector.pusher && echo.connector.pusher.connection) {
-        const connection = echo.connector.pusher.connection
-        
+        connection = echo.connector.pusher.connection
+        setIsConnected(connection.state === "connected" || connection.state === "connecting")
+
         const onConnected = () => {
-          console.log("🟢 Connecté au serveur WebSocket (Reverb)")
           setIsConnected(true)
-          
-          // Récupérer les notifications manquées lors de la reconnexion
           fetchUnreadNotifications()
         }
-
-        const onDisconnected = () => {
-          console.log("🔴 Déconnecté du serveur WebSocket")
-          setIsConnected(false)
-        }
-
-        const onError = (error) => {
-          console.error("❌ Erreur WebSocket:", error)
-          setIsConnected(false)
-        }
-
+        const onDisconnected = () => setIsConnected(false)
+        const onError = () => setIsConnected(false)
         const onStateChange = (state) => {
-          console.log("🔄 Changement d'état WebSocket:", state.current)
-          if (state.current === "connected") {
-            setIsConnected(true)
-          } else if (state.current === "disconnected" || state.current === "failed") {
-            setIsConnected(false)
-          }
+          const s = state?.current
+          if (s === "connected" || s === "connecting") setIsConnected(true)
+          if (s === "disconnected" || s === "failed") setIsConnected(false)
         }
 
         connection.bind("connected", onConnected)
@@ -190,56 +181,25 @@ export const useNotifications = () => {
         connection.bind("error", onError)
         connection.bind("state_change", onStateChange)
 
-        // Écouter les nouvelles notifications en temps réel
-        channel.listen(".notification.created", (notificationData) => {
-          console.log("📩 Nouvelle notification reçue en temps réel:", notificationData)
-
-          if (notificationData) {
-            // Ajouter la nouvelle notification
-            setNotifications((prev) => {
-              // Vérifier si la notification existe déjà
-              const exists = prev.some((n) => n.id === notificationData.id)
-              if (exists) {
-                console.log("⚠️ Notification déjà présente, ignorée")
-                return prev
-              }
-              
-              console.log("✅ Nouvelle notification ajoutée à la liste")
-              return [notificationData, ...prev]
-            })
-
-            // Incrémenter le compteur si la notification n'est pas lue
-            if (!notificationData.lu) {
-              setUnreadCount((prev) => {
-                const newCount = prev + 1
-                console.log(`🔔 Compteur de notifications: ${prev} → ${newCount}`)
-                return newCount
-              })
-            }
-
-            // Déclencher un événement personnalisé pour notifier les composants (comme AdminDashboard)
-            window.dispatchEvent(new CustomEvent('newNotificationReceived', { 
-              detail: notificationData 
-            }))
-          }
-        })
-
-        // Nettoyer lors du démontage
+        // cleanup des binds
         return () => {
-          console.log("🧹 Nettoyage de la connexion WebSocket")
           if (channel) {
             channel.stopListening(".notification.created")
             echo.leave("notifications")
           }
-          if (connection) {
-            connection.unbind("connected", onConnected)
-            connection.unbind("disconnected", onDisconnected)
-            connection.unbind("error", onError)
-            connection.unbind("state_change", onStateChange)
-          }
+          connection.unbind("connected", onConnected)
+          connection.unbind("disconnected", onDisconnected)
+          connection.unbind("error", onError)
+          connection.unbind("state_change", onStateChange)
         }
-      } else {
-        console.warn("⚠️ Connexion WebSocket non disponible")
+      }
+
+      // cleanup minimal si connection pas dispo au montage
+      return () => {
+        if (channel) {
+          channel.stopListening(".notification.created")
+          echo.leave("notifications")
+        }
       }
     } catch (error) {
       console.error("❌ Erreur lors de la configuration WebSocket:", error)

@@ -1,6 +1,5 @@
 import { useState, useEffect } from "react"
 
-
 const AjoutModal = ({
   showModal,
   setShowModal,
@@ -19,49 +18,34 @@ const AjoutModal = ({
 
   const [showCustomCategorie, setShowCustomCategorie] = useState(false)
   const [showCustomUnite, setShowCustomUnite] = useState(false)
+  const [selectedCategorie, setSelectedCategorie] = useState("")
 
-  const [selectedCategorie, setSelectedCategorie] = useState("");
-
-  // ✅ Synchroniser selectedCategorie avec formDataArticle lors de l'ouverture
   useEffect(() => {
     if (showModal) {
       setValidationErrors({ id: "", produit: "", prix: "" })
 
-      // Liste des catégories prédéfinies
       const predefinedCategories = [
-        "boisson/resto",
-        "salle/resto",
-        "boisson/snack",
-        "salle/snack",
-        "boisson/detente",
-        "salle/detente",
+        "boisson/resto", "salle/resto",
+        "boisson/snack", "salle/snack",
+        "boisson/detente", "salle/detente",
       ]
 
-      // Si la catégorie existe dans formDataArticle
       if (formDataArticle.categorie) {
         if (predefinedCategories.includes(formDataArticle.categorie)) {
-          // Catégorie standard → sélectionner dans le dropdown
           setSelectedCategorie(formDataArticle.categorie)
           setShowCustomCategorie(false)
         } else {
-          // Catégorie personnalisée → afficher le champ texte
           setSelectedCategorie("autre")
           setShowCustomCategorie(true)
         }
       } else {
-        // Pas de catégorie → réinitialiser
         setSelectedCategorie("")
         setShowCustomCategorie(false)
       }
 
-      // Gérer l'unité de la même manière
       const predefinedUnits = ["piece", "cl"]
       if (formDataArticle.unite) {
-        if (predefinedUnits.includes(formDataArticle.unite)) {
-          setShowCustomUnite(false)
-        } else {
-          setShowCustomUnite(true)
-        }
+        setShowCustomUnite(!predefinedUnits.includes(formDataArticle.unite))
       } else {
         setShowCustomUnite(false)
       }
@@ -73,8 +57,17 @@ const AjoutModal = ({
   const handleNumericInputChange = (e) => {
     const { name, value } = e.target
 
-    // ✅ Pour le champ ID, on autorise lettres + chiffres sans validation numérique
+    // ✅ ID : autorise lettres + chiffres + tirets (varchar)
     if (name === "id") {
+      // ✅ Interdit les espaces dans l'ID
+      if (value.includes(" ")) {
+        setValidationErrors((prev) => ({ ...prev, id: "⚠️ L'ID ne doit pas contenir d'espaces" }))
+        return
+      }
+      if (value.length > 50) {
+        setValidationErrors((prev) => ({ ...prev, id: "⚠️ L'ID ne doit pas dépasser 50 caractères" }))
+        return
+      }
       setValidationErrors((prev) => ({ ...prev, id: "" }))
       handleInputChange(e)
       return
@@ -88,19 +81,13 @@ const AjoutModal = ({
 
     const numericRegex = /^\d*\.?\d*$/
     if (!numericRegex.test(value)) {
-      setValidationErrors((prev) => ({
-        ...prev,
-        [name]: "⚠️ Seuls les chiffres sont autorisés",
-      }))
+      setValidationErrors((prev) => ({ ...prev, [name]: "⚠️ Seuls les chiffres sont autorisés" }))
       return
     }
 
     const numValue = parseFloat(value)
     if (numValue < 0) {
-      setValidationErrors((prev) => ({
-        ...prev,
-        [name]: "⚠️ La valeur doit être positive",
-      }))
+      setValidationErrors((prev) => ({ ...prev, [name]: "⚠️ La valeur doit être positive" }))
       return
     }
 
@@ -110,15 +97,11 @@ const AjoutModal = ({
 
   const handleFormSubmit = (e) => {
     e.preventDefault()
-
     const hasErrors = Object.values(validationErrors).some((error) => error !== "")
     if (hasErrors) return
-
-    // Quantité = 0 à l'ajout
     if (!editingArticle) {
       formDataArticle.produit = 0
     }
-
     handleSubmitArticle(e)
   }
 
@@ -126,7 +109,7 @@ const AjoutModal = ({
     <div className="modal show d-block" style={{ backgroundColor: "rgba(0,0,0,0.5)" }}>
       <div className="modal-dialog modal-lg">
         <div className="modal-content">
-          {/* HEADER */}
+
           <div className="modal-header">
             <h5 className="modal-title">
               {editingArticle ? "Modifier l'article" : "Ajouter un article"}
@@ -134,13 +117,17 @@ const AjoutModal = ({
             <button className="btn-close" onClick={() => setShowModal(false)} />
           </div>
 
-          {/* FORM */}
           <form onSubmit={handleFormSubmit}>
             <div className="modal-body">
+
               {/* ID + Catégorie */}
               <div className="row mb-3">
                 <div className="col-md-6">
-                  <label className="form-label">ID</label>
+                  <label className="form-label">
+                    ID
+                    {/* ✅ Indique clairement que l'ID est alphanumérique */}
+                    <small className="text-muted ms-2">(lettres, chiffres, tirets — max 50)</small>
+                  </label>
                   <input
                     type="text"
                     className={`form-control ${validationErrors.id ? "is-invalid" : ""}`}
@@ -148,6 +135,7 @@ const AjoutModal = ({
                     value={formDataArticle.id || ""}
                     onChange={handleNumericInputChange}
                     disabled={!!editingArticle}
+                    placeholder="Ex: ART-001, 1, A1..."
                   />
                   {validationErrors.id && (
                     <div className="invalid-feedback d-block">{validationErrors.id}</div>
@@ -156,24 +144,18 @@ const AjoutModal = ({
 
                 <div className="col-md-6">
                   <label className="form-label">Catégorie</label>
-
                   <select
                     className="form-select"
                     value={selectedCategorie}
                     onChange={(e) => {
-                      const value = e.target.value;
-                      setSelectedCategorie(value);
-
+                      const value = e.target.value
+                      setSelectedCategorie(value)
                       if (value === "autre") {
-                        setShowCustomCategorie(true);
-                        handleInputChange({
-                          target: { name: "categorie", value: "" },
-                        });
+                        setShowCustomCategorie(true)
+                        handleInputChange({ target: { name: "categorie", value: "" } })
                       } else {
-                        setShowCustomCategorie(false);
-                        handleInputChange({
-                          target: { name: "categorie", value },
-                        });
+                        setShowCustomCategorie(false)
+                        handleInputChange({ target: { name: "categorie", value } })
                       }
                     }}
                     required
@@ -187,24 +169,17 @@ const AjoutModal = ({
                     <option value="salle/detente">Salle / Détente</option>
                     <option value="autre">➕ Autre catégorie</option>
                   </select>
-
                   {showCustomCategorie && (
                     <input
                       type="text"
                       className="form-control mt-2"
                       placeholder="Entrer la nouvelle catégorie"
                       value={formDataArticle.categorie}
-                      onChange={(e) =>
-                        handleInputChange({
-                          target: { name: "categorie", value: e.target.value },
-                        })
-                      }
+                      onChange={(e) => handleInputChange({ target: { name: "categorie", value: e.target.value } })}
                       required
                     />
                   )}
                 </div>
-
-
               </div>
 
               {/* Libellé + Quantité + Unité */}
@@ -227,43 +202,30 @@ const AjoutModal = ({
                     <label className="form-label">Quantité</label>
                     <input
                       type="text"
-                      className={`form-control ${validationErrors.produit ? "is-invalid" : ""
-                        }`}
+                      className={`form-control ${validationErrors.produit ? "is-invalid" : ""}`}
                       name="produit"
                       value={formDataArticle.produit ?? 0}
                       onChange={handleNumericInputChange}
                     />
                     {validationErrors.produit && (
-                      <div className="invalid-feedback d-block">
-                        {validationErrors.produit}
-                      </div>
+                      <div className="invalid-feedback d-block">{validationErrors.produit}</div>
                     )}
                   </div>
                 )}
 
                 <div className="col-md-4">
                   <label className="form-label">Unité</label>
-
                   <select
                     className="form-select"
-                    value={
-                      showCustomUnite
-                        ? "autre"
-                        : formDataArticle.unite || ""
-                    }
+                    value={showCustomUnite ? "autre" : formDataArticle.unite || ""}
                     onChange={(e) => {
                       const value = e.target.value
-
                       if (value === "autre") {
                         setShowCustomUnite(true)
-                        handleInputChange({
-                          target: { name: "unite", value: "" },
-                        })
+                        handleInputChange({ target: { name: "unite", value: "" } })
                       } else {
                         setShowCustomUnite(false)
-                        handleInputChange({
-                          target: { name: "unite", value },
-                        })
+                        handleInputChange({ target: { name: "unite", value } })
                       }
                     }}
                     required
@@ -273,23 +235,17 @@ const AjoutModal = ({
                     <option value="cl">Centilitre</option>
                     <option value="autre">➕ Autre unité</option>
                   </select>
-
                   {showCustomUnite && (
                     <input
                       type="text"
                       className="form-control mt-2"
                       placeholder="Nouvelle unité"
                       value={formDataArticle.unite || ""}
-                      onChange={(e) =>
-                        handleInputChange({
-                          target: { name: "unite", value: e.target.value },
-                        })
-                      }
+                      onChange={(e) => handleInputChange({ target: { name: "unite", value: e.target.value } })}
                       required
                     />
                   )}
                 </div>
-
               </div>
 
               {/* Prix */}
@@ -309,25 +265,16 @@ const AjoutModal = ({
               </div>
             </div>
 
-            {/* FOOTER */}
             <div className="modal-footer">
               <button
                 type="button"
                 className="btn btn-secondary"
-                onClick={() => {
-                  setShowModal(false)
-                  setEditingArticle(null)
-                }}
+                onClick={() => { setShowModal(false); setEditingArticle(null) }}
               >
                 Annuler
               </button>
-
               <button type="submit" className="btn btn-primary" disabled={saveLoading}>
-                {saveLoading
-                  ? "Enregistrement..."
-                  : editingArticle
-                    ? "Modifier"
-                    : "Ajouter"}
+                {saveLoading ? "Enregistrement..." : editingArticle ? "Modifier" : "Ajouter"}
               </button>
             </div>
           </form>

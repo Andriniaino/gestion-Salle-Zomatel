@@ -71,7 +71,7 @@ export default function ModalPertes({ show, onClose }) {
     setLoading(true);
     try {
       const response = await api.post('/pertes', {
-        article_id: selectedArticle.id,
+        article_id: selectedArticle.pk,
         categorie: selectedArticle.categorie, // TRES IMPORTANT
         produit: parseFloat(produitPerte),
         commentaire: commentaire

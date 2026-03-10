@@ -494,7 +494,7 @@ export default function NotificationsPage() {
         <div className="d-flex gap-4 mb-2 ps-1 align-items-center">
           <span className="small text-muted d-flex align-items-center gap-2">
             <span style={{ display: "inline-block", width: 14, height: 14, backgroundColor: "#fff3cd", border: "1px solid #ffc107", borderRadius: 3 }}></span>
-            <strong>Non lue</strong> — cliquez pour marquer comme lue
+            <strong>Non lue</strong>
           </span>
           <span className="small text-muted d-flex align-items-center gap-2">
             <span style={{ display: "inline-block", width: 14, height: 14, backgroundColor: "#fff", border: "1px solid #dee2e6", borderRadius: 3 }}></span>

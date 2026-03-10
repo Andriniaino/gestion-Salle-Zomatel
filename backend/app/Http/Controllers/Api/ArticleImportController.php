@@ -38,18 +38,37 @@ class ArticleImportController extends Controller
 
             return response()->json([
                 'success' => true,
-                'message' => 'Import terminé avec succès',
+                'message' => "Import terminé : {$stats['inserted']} insérés, {$stats['updated']} mis à jour, {$stats['skipped']} ignorés",
                 'stats'   => $stats
             ], 200);
 
         } catch (\Exception $e) {
             Log::error('Erreur import article : ' . $e->getMessage());
-
             return response()->json([
                 'success' => false,
                 'message' => 'Erreur import : ' . $e->getMessage()
             ], 500);
         }
+    }
+
+    // =========================================================
+    // ✅ NOUVELLE FONCTION : Nettoyer l'ID proprement
+    // "1.0" → "1" | "ART-001" → "ART-001" | " 01 " → "01"
+    // =========================================================
+    private function cleanId($rawId): ?string
+    {
+        if ($rawId === null || trim((string) $rawId) === '') {
+            return null;
+        }
+
+        $id = trim((string) $rawId);
+
+        // ✅ Excel transforme "1" en "1.0" → on retire le .0 parasite
+        if (preg_match('/^\d+\.0+$/', $id)) {
+            $id = (string)(int) $id;
+        }
+
+        return $id;
     }
 
     /**
@@ -64,7 +83,7 @@ class ArticleImportController extends Controller
             throw new \Exception("Impossible d'ouvrir le fichier CSV");
         }
 
-        $headers = array_map('strtolower', array_map('trim', fgetcsv($handle)));
+        $headers    = array_map('strtolower', array_map('trim', fgetcsv($handle)));
         $lineNumber = 1;
 
         while (($row = fgetcsv($handle)) !== false) {
@@ -81,9 +100,8 @@ class ArticleImportController extends Controller
                 continue;
             }
 
-            $data = array_combine($headers, $row);
+            $data        = array_combine($headers, $row);
             $articleData = $this->mapRowData($data);
-
             $this->saveArticle($articleData, $stats, $lineNumber);
         }
 
@@ -102,19 +120,17 @@ class ArticleImportController extends Controller
 
         $stats = ['inserted' => 0, 'updated' => 0, 'skipped' => 0, 'errors' => []];
 
-        // ✅ formatDataArray: true → force la lecture des cellules comme chaînes de caractères
         $spreadsheet = IOFactory::load($file->getRealPath());
-        $sheet = $spreadsheet->getActiveSheet();
+        $sheet       = $spreadsheet->getActiveSheet();
 
-        // ✅ Lire avec formatDataArray pour préserver les IDs varchar (ex: "ART-001", "001")
         $rows = $sheet->toArray(
             null,   // nullValue
             true,   // calculateFormulas
-            true,   // formatData → ✅ garde le format original (varchar, texte, etc.)
+            true,   // formatData → préserve le format original
             false   // returnCellRef
         );
 
-        $headers = array_map('strtolower', array_map('trim', array_shift($rows)));
+        $headers    = array_map('strtolower', array_map('trim', array_shift($rows)));
         $lineNumber = 1;
 
         foreach ($rows as $row) {
@@ -125,9 +141,14 @@ class ArticleImportController extends Controller
                 continue;
             }
 
-            $data = array_combine($headers, $row);
-            $articleData = $this->mapRowData($data);
+            if (count($headers) !== count($row)) {
+                $stats['errors'][] = "Ligne $lineNumber : nombre de colonnes incorrect";
+                $stats['skipped']++;
+                continue;
+            }
 
+            $data        = array_combine($headers, $row);
+            $articleData = $this->mapRowData($data);
             $this->saveArticle($articleData, $stats, $lineNumber);
         }
 
@@ -135,32 +156,31 @@ class ArticleImportController extends Controller
     }
 
     /**
-     * ✅ Mapper les données d'une ligne — ID traité en VARCHAR (string)
+     * Mapper les données — ID nettoyé via cleanId()
      */
     private function mapRowData(array $data): array
     {
         return [
-            // ✅ CORRECTION PRINCIPALE : ID en string (varchar) et non en (int)
-            'id'        => isset($data['id']) ? trim((string) $data['id']) : null,
+            // ✅ cleanId() règle le problème "1.0" → "1"
+            'id'        => $this->cleanId($data['id'] ?? null),
 
             'categorie' => isset($data['categorie']) ? trim($data['categorie']) : null,
             'libelle'   => isset($data['libelle'])   ? trim($data['libelle'])   : null,
-
-            // produit reste numérique
-            'produit'   => isset($data['produit']) && $data['produit'] !== '' ? (float) $data['produit'] : 0,
-            'unite'     => isset($data['unite'])   ? trim($data['unite'])   : null,
-            'prix'      => isset($data['prix'])    && $data['prix'] !== '' ? (float) $data['prix'] : null,
+            'produit'   => isset($data['produit']) && $data['produit'] !== ''
+                            ? (float) $data['produit'] : 0,
+            'unite'     => isset($data['unite'])     ? trim($data['unite'])     : null,
+            'prix'      => isset($data['prix']) && $data['prix'] !== ''
+                            ? (float) $data['prix'] : null,
             'date'      => Carbon::now()->format('Y-m-d'),
         ];
     }
 
     /**
-     * Insert / Update article
+     * Insert / Update — updateOrCreate évite tout doublon
      */
     private function saveArticle(array $data, array &$stats, int $lineNumber = 0)
     {
         $validator = Validator::make($data, [
-            // ✅ CORRECTION : 'string' au lieu de 'integer' pour l'ID varchar
             'id'        => 'required|string|max:50',
             'categorie' => 'required|string|max:20',
             'libelle'   => 'required|string|max:100',
@@ -176,15 +196,16 @@ class ArticleImportController extends Controller
             return;
         }
 
-        // ✅ Recherche par ID varchar
-        $article = Article::where('id', $data['id'])->first();
-
-        if ($article) {
-            $article->update($data);
-            $stats['updated']++;
-        } else {
-            Article::create($data);
-            $stats['inserted']++;
-        }
+        // Insertion directe : l'ID peut être dupliqué, on insère toujours un nouvel enregistrement
+        Article::create([
+            'id'        => $data['id'],
+            'categorie' => $data['categorie'],
+            'libelle'   => $data['libelle'],
+            'produit'   => $data['produit'],
+            'unite'     => $data['unite'],
+            'prix'      => $data['prix'],
+            'date'      => $data['date'],
+        ]);
+        $stats['inserted']++;
     }
 }

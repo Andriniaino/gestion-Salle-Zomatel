@@ -32,9 +32,7 @@ class ArticleController extends Controller
         }
     }
 
-    // ✅ FIX PRINCIPAL : Afficher les articles avec filtre optionnel par catégorie
-    // AVANT : Article::all() → ignorait totalement ?categorie=resto
-    // APRÈS : filtre LIKE '%resto%' si le paramètre categorie est présent
+
     public function indexArticle(Request $request)
     {
         try {
@@ -70,7 +68,7 @@ class ArticleController extends Controller
     {
         try {
             $validated = $request->validate([
-                'id' => 'required|string|max:10|unique:article,id',
+                'id' => 'required|string|max:50',
                 'categorie' => 'required|string|max:20',
                 'libelle' => 'required|string|max:100',
                 'produit' => 'required|numeric|min:0',
@@ -83,7 +81,7 @@ class ArticleController extends Controller
 
             try {
                 $notification = Notification::create([
-                    'article_id' => $article->id,
+                    'article_id' => $article->pk,
                     'categorie' => $article->categorie,
                     'libelle' => $article->libelle,
                     'produit' => $article->produit,
@@ -120,11 +118,11 @@ class ArticleController extends Controller
         }
     }
 
-    // Afficher un article
-    public function show($id)
+    // Afficher un article (par pk)
+    public function show($pk)
     {
         try {
-            $article = Article::where('id', $id)->first();
+            $article = Article::where('pk', $pk)->first();
             if (!$article) {
                 return response()->json([
                     'success' => false,
@@ -144,11 +142,11 @@ class ArticleController extends Controller
         }
     }
 
-    // Mettre à jour un article
-    public function update(Request $request, $id)
+    // Mettre à jour un article (par pk)
+    public function update(Request $request, $pk)
     {
         try {
-            $article = Article::where('id', $id)->first();
+            $article = Article::where('pk', $pk)->first();
             if (!$article) {
                 return response()->json([
                     'success' => false,
@@ -188,11 +186,11 @@ class ArticleController extends Controller
         }
     }
 
-    // Mettre à jour uniquement le produit
-    public function updateProduit(Request $request, $id)
+    // Mettre à jour uniquement le produit (par pk)
+    public function updateProduit(Request $request, $pk)
     {
         try {
-            $article = Article::where('id', $id)->first();
+            $article = Article::where('pk', $pk)->first();
             if (!$article) {
                 return response()->json([
                     'success' => false,
@@ -218,7 +216,7 @@ class ArticleController extends Controller
             if ($validated['produit'] > $ancienProduit) {
                 try {
                     $notification = Notification::create([
-                        'article_id' => $article->id,
+                        'article_id' => $article->pk,
                         'categorie' => $article->categorie,
                         'libelle' => $article->libelle,
                         'produit' => $validated['produit'] - $ancienProduit,
@@ -256,11 +254,11 @@ class ArticleController extends Controller
         }
     }
 
-    // Supprimer un article
-    public function destroy($id)
+    // Supprimer un article (par pk)
+    public function destroy($pk)
     {
         try {
-            $article = Article::where('id', $id)->first();
+            $article = Article::find($pk);
             if (!$article) {
                 return response()->json([
                     'success' => false,

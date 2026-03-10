@@ -49,7 +49,6 @@ const AdminDashboard = () => {
 
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
-  const [showAll, setShowAll] = useState(true);
 
   const getTodayISO = () => {
     const today = new Date();
@@ -126,7 +125,7 @@ const AdminDashboard = () => {
 
   const handleInputChange = (e) => {
     const { name, value } = e.target
-    if (["id", "produit", "prix"].includes(name) && value !== "" && Number(value) < 0) return
+    if (["produit", "prix"].includes(name) && value !== "" && Number(value) < 0) return
     setFormDataArticle((prev) => ({ ...prev, [name]: value }))
   }
 
@@ -150,7 +149,8 @@ const AdminDashboard = () => {
   const handleEdit = (article) => {
     setEditingArticle(article)
     setFormDataArticle({
-      id: article.id != null ? String(article.id) : "",
+      // ✅ ID toujours en string, jamais converti en number
+      id: article.id != null ? String(article.id).trim() : "",
       categorie: article.categorie || "resto",
       libelle: article.libelle || "",
       produit: article.produit != null ? String(article.produit) : "",
@@ -168,6 +168,8 @@ const AdminDashboard = () => {
     const produitNum = formDataArticle.produit === "" || formDataArticle.produit == null
       ? 0 : parseNumber(formDataArticle.produit)
     const prixNum = parseNumber(formDataArticle.prix)
+
+    // ✅ ID nettoyé en string propre
     const idValue = formDataArticle.id ? String(formDataArticle.id).trim() : ""
 
     if (produitNum == null || produitNum < 0) {
@@ -178,25 +180,23 @@ const AdminDashboard = () => {
       showToast("Le champ Prix doit être un nombre positif.", "warning")
       setSaveLoading(false); return
     }
-    // ✅ Validation de l'ID côté client pour la création uniquement (alphanumérique, max 10 caractères)
+
+    // ✅ Validation ID uniquement à la création
     if (!editingArticle) {
       if (!idValue) {
         showToast("L'ID est obligatoire.", "warning")
         setSaveLoading(false); return
       }
-      if (idValue.length > 10) {
-        showToast("L'ID ne doit pas dépasser 10 caractères.", "warning")
+      // ✅ max:50 aligné avec le backend (ArticleImportController)
+      if (idValue.length > 50) {
+        showToast("L'ID ne doit pas dépasser 50 caractères.", "warning")
         setSaveLoading(false); return
       }
-      const exists = articles.some((a) => String(a.id) === idValue)
-      if (exists) {
-        showToast("Cet ID existe déjà.", "warning")
-        setSaveLoading(false); return
-      }
+      // ✅ Comparaison insensible à la casse + trim des deux côtés
+      // L'ID peut être dupliqué : pas de vérification d'unicité côté frontend
     }
 
     const payload = {
-      // ✅ On envoie l'ID uniquement lors de la création, sous forme de chaîne
       ...(!editingArticle ? { id: idValue } : {}),
       categorie: formDataArticle.categorie,
       libelle: formDataArticle.libelle,
@@ -208,7 +208,7 @@ const AdminDashboard = () => {
 
     try {
       if (editingArticle) {
-        await api.put(`/articles/${editingArticle.id}`, payload)
+        await api.put(`/articles/${editingArticle.pk}`, payload)
         showToast(`Article "${formDataArticle.libelle}" modifié avec succès !`, "success")
       } else {
         await api.post("/articles", payload)
@@ -226,7 +226,7 @@ const AdminDashboard = () => {
     }
   }
 
-  const confirmDelete = (id) => { setArticleToDelete(id) }
+  const confirmDelete = (pk) => { setArticleToDelete(pk) }
 
   const handleDelete = async () => {
     if (!articleToDelete) return
@@ -259,16 +259,23 @@ const AdminDashboard = () => {
     const key = sortConfig.key
     if (!key) return 0
     let aVal = a[key], bVal = b[key]
+
     if (key === "date") {
       aVal = aVal ? new Date(aVal).getTime() : 0
       bVal = bVal ? new Date(bVal).getTime() : 0
-    } else if (["produit", "prix", "id"].includes(key)) {
+    } else if (["produit", "prix"].includes(key)) {
+      // ✅ produit et prix → tri numérique
       aVal = Number(aVal) || 0
       bVal = Number(bVal) || 0
+    } else if (key === "id") {
+      // ✅ ID → tri alphabétique string (supporte "ART-001", "1", "B2"...)
+      aVal = String(aVal ?? "").trim().toLowerCase()
+      bVal = String(bVal ?? "").trim().toLowerCase()
     } else {
       aVal = (aVal ?? "").toString().toLowerCase()
       bVal = (bVal ?? "").toString().toLowerCase()
     }
+
     if (aVal < bVal) return sortConfig.direction === "asc" ? -1 : 1
     if (aVal > bVal) return sortConfig.direction === "asc" ? 1 : -1
     return 0
@@ -285,6 +292,8 @@ const AdminDashboard = () => {
       String(article.produit).toLowerCase().includes(term) ||
       article.unite?.toLowerCase().includes(term) ||
       String(article.prix).toLowerCase().includes(term) ||
+      // ✅ Recherche par ID en string
+      String(article.id).toLowerCase().includes(term) ||
       (article.date && new Date(article.date).toLocaleDateString("fr-FR").includes(term))
 
     const matchesCategory =
@@ -338,7 +347,6 @@ const AdminDashboard = () => {
 
   return (
     <>
-      {/* ✅ TOAST NOTIFICATION */}
       <ToastNotification toast={toast} onClose={clearToast} duration={2000} />
 
       <div className="position-relative min-vh-100">
@@ -365,7 +373,6 @@ const AdminDashboard = () => {
               />
 
               <div className="container">
-                {/* Filtres et recherche */}
                 <div className="row mb-4">
                   <div className="col-12">
                     <div className="d-flex justify-content-center gap-2 flex-wrap align-items-center">
@@ -414,7 +421,6 @@ const AdminDashboard = () => {
                   </div>
                 </div>
 
-                {/* Boutons */}
                 <div className="card-body py-2 mb-3">
                   <div className="d-flex justify-content gap-2 flex-wrap">
                     <button className="btn btn-primary" onClick={openAddModal} style={{ width: "150px", height: "35px", fontSize: "12px" }}>
@@ -440,7 +446,6 @@ const AdminDashboard = () => {
                 </div>
               </div>
 
-              {/* Tableau */}
               <div className="card shadow" style={{ backgroundColor: "rgba(255,255,255,0.06)" }}>
                 <div className="card-body">
                   <div className="table-responsive">
@@ -459,7 +464,7 @@ const AdminDashboard = () => {
                       </thead>
                       <tbody>
                         {currentArticles.map((article) => (
-                          <tr key={article.id}>
+                          <tr key={article.pk ?? article.id ?? Math.random()}>
                             <td>{article.id}</td>
                             <td>
                               <span className={`badge ${getCategoryBadgeClass(article.categorie)}`}>
@@ -477,7 +482,7 @@ const AdminDashboard = () => {
                               </button>
                               <button
                                 className="btn btn-sm btn-outline-danger"
-                                onClick={() => confirmDelete(article.id)}
+                                onClick={() => confirmDelete(article.pk)}
                                 data-bs-toggle="modal"
                                 data-bs-target="#deleteModal"
                               >
@@ -501,7 +506,6 @@ const AdminDashboard = () => {
                 </div>
               </div>
 
-              {/* Pagination */}
               {totalPages > 1 && (
                 <nav className="mt-3">
                   <ul className="pagination d-flex justify-content-between align-items-center">
@@ -530,16 +534,10 @@ const AdminDashboard = () => {
         </div>
       </div>
 
-      {/* ============================================================
-          MODALS
-      ============================================================ */}
-
-      {/* ✅ MODAL SUPPRESSION — STYLE ROUGE */}
+      {/* MODAL SUPPRESSION */}
       <div className="modal fade" id="deleteModal" tabIndex="-1" aria-labelledby="deleteModalLabel" aria-hidden="true">
         <div className="modal-dialog modal-dialog-centered">
           <div className="modal-content border-0 shadow-lg" style={{ borderRadius: "16px", overflow: "hidden" }}>
-
-            {/* Header rouge */}
             <div className="modal-header border-0" style={{ background: "linear-gradient(135deg, #d63031, #e17055)", padding: "20px 24px" }}>
               <div className="d-flex align-items-center gap-2">
                 <span style={{ fontSize: "24px" }}>🗑️</span>
@@ -547,70 +545,30 @@ const AdminDashboard = () => {
                   Supprimer l'article
                 </h5>
               </div>
-              <button
-                type="button"
-                className="btn-close btn-close-white"
-                data-bs-dismiss="modal"
-                aria-label="Close"
-                onClick={() => setArticleToDelete(null)}
-              ></button>
+              <button type="button" className="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close" onClick={() => setArticleToDelete(null)}></button>
             </div>
-
-            {/* Body */}
             <div className="modal-body" style={{ padding: "28px 24px 20px" }}>
               <div className="text-center mb-3">
-                <div style={{
-                  width: "64px", height: "64px",
-                  borderRadius: "50%",
-                  background: "rgba(214,48,49,0.1)",
-                  display: "flex", alignItems: "center", justifyContent: "center",
-                  margin: "0 auto", fontSize: "32px"
-                }}>
+                <div style={{ width: "64px", height: "64px", borderRadius: "50%", background: "rgba(214,48,49,0.1)", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto", fontSize: "32px" }}>
                   ⚠️
                 </div>
               </div>
-
               <p className="text-center fw-bold mb-2" style={{ fontSize: "16px", color: "#d63031" }}>
                 Êtes-vous sûr de vouloir supprimer cet article ?
               </p>
-
-              <p className="text-center mb-0" style={{
-                fontSize: "13px", color: "#c0392b",
-                background: "rgba(214,48,49,0.08)",
-                borderRadius: "8px", padding: "10px 16px",
-                border: "1px solid rgba(214,48,49,0.2)"
-              }}>
+              <p className="text-center mb-0" style={{ fontSize: "13px", color: "#c0392b", background: "rgba(214,48,49,0.08)", borderRadius: "8px", padding: "10px 16px", border: "1px solid rgba(214,48,49,0.2)" }}>
                 🚫 <strong>Cette action est irréversible.</strong><br />
                 L'article sera définitivement supprimé.
               </p>
             </div>
-
-            {/* Footer */}
             <div className="modal-footer border-0" style={{ padding: "0 24px 24px", gap: "10px" }}>
-              <button
-                type="button"
-                className="btn btn-outline-secondary"
-                data-bs-dismiss="modal"
-                onClick={() => setArticleToDelete(null)}
-                style={{ borderRadius: "10px", padding: "8px 20px", flex: 1 }}
-              >
+              <button type="button" className="btn btn-outline-secondary" data-bs-dismiss="modal" onClick={() => setArticleToDelete(null)} style={{ borderRadius: "10px", padding: "8px 20px", flex: 1 }}>
                 Annuler
               </button>
-              <button
-                type="button"
-                className="btn btn-danger"
-                data-bs-dismiss="modal"
-                onClick={handleDelete}
-                style={{
-                  borderRadius: "10px", padding: "8px 20px", flex: 1,
-                  background: "linear-gradient(135deg, #d63031, #c0392b)",
-                  border: "none", fontWeight: "600"
-                }}
-              >
+              <button type="button" className="btn btn-danger" data-bs-dismiss="modal" onClick={handleDelete} style={{ borderRadius: "10px", padding: "8px 20px", flex: 1, background: "linear-gradient(135deg, #d63031, #c0392b)", border: "none", fontWeight: "600" }}>
                 🗑️ Supprimer
               </button>
             </div>
-
           </div>
         </div>
       </div>

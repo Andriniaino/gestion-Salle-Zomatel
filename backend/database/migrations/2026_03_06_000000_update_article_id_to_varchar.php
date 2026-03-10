@@ -3,6 +3,7 @@
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Facades\DB;
 
 return new class extends Migration
 {
@@ -11,12 +12,21 @@ return new class extends Migration
      */
     public function up(): void
     {
-        // D'abord, retirer les contraintes qui dépendent de article_id
-        Schema::table('pertes', function (Blueprint $table) {
-            // Suppression de la clé étrangère et de l'index existants
-            $table->dropForeign(['article_id']);
-            $table->dropIndex(['article_id']);
-        });
+        // D'abord, retirer les contraintes qui dépendent de article_id (si elles existent)
+        try {
+            Schema::table('pertes', function (Blueprint $table) {
+                $table->dropForeign(['article_id']);
+            });
+        } catch (\Throwable $e) {
+            // Ignorer si la FK n'existe pas
+        }
+        try {
+            Schema::table('pertes', function (Blueprint $table) {
+                $table->dropIndex(['article_id']);
+            });
+        } catch (\Throwable $e) {
+            // Ignorer si l'index n'existe pas
+        }
 
         // Changer le type de article.id en VARCHAR(10)
         Schema::table('article', function (Blueprint $table) {
@@ -30,13 +40,8 @@ return new class extends Migration
 
         Schema::table('pertes', function (Blueprint $table) {
             $table->string('article_id', 10)->change();
-
-            // Recréer l'index et la clé étrangère avec le nouveau type
             $table->index('article_id');
-            $table->foreign('article_id')
-                ->references('id')
-                ->on('article')
-                ->onDelete('cascade');
+            // FK non recréée ici : la migration allow_duplicate_article_id la gère
         });
 
         Schema::table('notification', function (Blueprint $table) {

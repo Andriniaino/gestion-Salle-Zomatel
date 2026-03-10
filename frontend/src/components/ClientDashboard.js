@@ -135,7 +135,7 @@ const ClientDashboard = () => {
       const quantiteActuelle = parseFloat(selectedArticle.produit) || 0
       const nouvelleQuantite = quantiteActuelle + quantiteAjoutee
 
-      await api.patch(`/articles/${selectedArticle.id}/produit`, {
+      await api.patch(`/articles/${selectedArticle.pk}/produit`, {
         produit: nouvelleQuantite,
         date_ajout: dateAjout,
         heure_ajout: heureAjout,
@@ -191,7 +191,7 @@ const ClientDashboard = () => {
     if (!term) return true
     const dateStr = article.date ? new Date(article.date).toLocaleDateString("fr-FR") : ""
     return (
-      String(article.id).includes(term) ||
+      String(article.pk).includes(term) ||
       article.libelle?.toLowerCase().includes(term) ||
       article.categorie?.toLowerCase().includes(term) ||
       String(article.produit).includes(term) ||
@@ -200,9 +200,7 @@ const ClientDashboard = () => {
     )
   })
 
-  // ✅ FIX : pour les non-admins, les articles sont déjà filtrés par l'API
-  // On applique canAddToCategory uniquement pour l'affichage du bouton,
-  // mais on affiche TOUS les articles retournés par l'API
+
   const authorizedArticles = user?.categorie === "admin"
     ? filteredArticles.filter((article) => canAddToCategory(article.categorie, user.categorie))
     : filteredArticles // L'API a déjà filtré par catégorie
@@ -407,7 +405,7 @@ const ClientDashboard = () => {
                   <tbody>
                     {paginatedArticles.length > 0 ? (
                       paginatedArticles.map((article) => (
-                        <tr key={article.id}>
+                        <tr key={article.pk}>
                           <td>{article.id}</td>
                           <td>
                             <span className={`badge ${getCategoryBadgeClass(article.categorie)}`}>
