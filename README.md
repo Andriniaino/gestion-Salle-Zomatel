@@ -165,3 +165,53 @@ gestion-salle/
 ## Support
 
 Pour toute question ou problème, consultez la documentation ou contactez l'équipe de développement.
+
+##env
+
+APP_NAME=Laravel
+APP_ENV=local
+APP_KEY=base64:GENERATE_WITH_ARTISAN
+APP_DEBUG=true
+APP_URL=http://192.168.7.163:8000
+#APP_URL=http://10.10.10.155:8000
+
+
+DB_CONNECTION=mysql
+DB_HOST=127.0.0.1
+DB_PORT=3306
+DB_DATABASE=production
+DB_USERNAME=root
+DB_PASSWORD=
+
+#config email
+
+MAIL_MAILER=smtp
+MAIL_HOST=smtp.gmail.com
+MAIL_PORT=587
+#MAIL_USERNAME=economat@zomatel.com
+#MAIL_PASSWORD=ukdaexsbohdgofke
+MAIL_USERNAME=johanesaalitera@gmail.com
+MAIL_PASSWORD=mzntliuqbuoqxpbh
+MAIL_ENCRYPTION=tls
+MAIL_FROM_ADDRESS=johanesaalitera@gmail.com
+MAIL_FROM_NAME="Control +"
+QUEUE_CONNECTION=sync
+
+
+BROADCAST_CONNECTION=pusher
+
+PUSHER_APP_ID=476966
+PUSHER_APP_KEY=f4mxonz864balft6wegl
+PUSHER_APP_SECRET=yi9fklczpx6rl7ucn9jw
+PUSHER_HOST=127.0.0.1
+PUSHER_PORT=8080
+PUSHER_SCHEME=http
+PUSHER_APP_CLUSTER=mt1
+
+
+
+# Vite / React
+VITE_REVERB_APP_KEY="${REVERB_APP_KEY}"
+VITE_REVERB_HOST="${REVERB_HOST}"
+VITE_REVERB_PORT="${REVERB_PORT}"
+VITE_REVERB_SCHEME="${REVERB_SCHEME}"

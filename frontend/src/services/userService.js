@@ -1,6 +1,4 @@
-// src/services/userService.js
-
-import api from "./api";
+import api from './api'
 
 // ─── Base URL (sans /api) ─────────────────────────────────────────────────────
 const getBaseURL = () => {
