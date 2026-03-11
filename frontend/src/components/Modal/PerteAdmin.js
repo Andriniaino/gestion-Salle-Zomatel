@@ -24,11 +24,8 @@ export default function PerteAdmin() {
 
   const [successMessage, setSuccessMessage] = useState(null)
 
-  /* =========================
-     FETCH
-  ========================= */
   useEffect(() => {
-    api.get("/pertes")                          // ✅ était : axios.get("http://192.168.7.162:8000/api/pertes")
+    api.get("/pertes")                          
       .then(res => {
         setPertes(res.data.data || [])
         setLoading(false)
@@ -36,12 +33,10 @@ export default function PerteAdmin() {
       .catch(() => setLoading(false))
   }, [])
 
-  /* =========================
-     EXPORT
-  ========================= */
+  
   const exportPertes = async (categorie) => {
     try {
-      let url = "/pertes/export"              // ✅ était : `${API_BASE}/api/pertes/export`
+      let url = "/pertes/export"              
       if (categorie && categorie !== "tous") {
         url += `?categorie=${encodeURIComponent(categorie)}`
       }
@@ -68,9 +63,7 @@ export default function PerteAdmin() {
     }
   }
 
-  /* =========================
-     FILTRAGE + RECHERCHE
-  ========================= */
+  
   const filteredPertes = useMemo(() => {
     let filtered = pertes
 
@@ -102,18 +95,14 @@ export default function PerteAdmin() {
     return filtered
   }, [pertes, serviceFilter, searchTerm])
 
-  /* =========================
-     TRI PAR DATE (DESC)
-  ========================= */
+  
   const sortedPertes = useMemo(() => {
     return [...filteredPertes].sort(
       (a, b) => new Date(b.created_at) - new Date(a.created_at)
     )
   }, [filteredPertes])
 
-  /* =========================
-     PAGINATION
-  ========================= */
+
   const totalPages = Math.ceil(sortedPertes.length / PER_PAGE)
 
   const paginatedPertes = useMemo(() => {
@@ -136,17 +125,13 @@ export default function PerteAdmin() {
     setCurrentPage(1)
   }
 
-  /* =========================
-     HELPER TOAST
-  ========================= */
+ 
   const showToast = (type) => {
     setSuccessMessage(type)
     setTimeout(() => setSuccessMessage(null), 2000)
   }
 
-  /* =========================
-     SUPPRESSION
-  ========================= */
+  
   const handleDelete = (id) => {
     setPerteToDelete(id)
     setShowDeleteModal(true)
@@ -154,7 +139,7 @@ export default function PerteAdmin() {
 
   const confirmDelete = async () => {
     try {
-      await api.delete(`/pertes/${perteToDelete}`)   // ✅ était : axios.delete("http://localhost:8000/api/pertes/...")
+      await api.delete(`/pertes/${perteToDelete}`)   
       setPertes(prev => prev.filter(p => p.id !== perteToDelete))
       setShowDeleteModal(false)
       setPerteToDelete(null)
@@ -165,9 +150,7 @@ export default function PerteAdmin() {
     }
   }
 
-  /* =========================
-     MODIFICATION
-  ========================= */
+  
   const handleEdit = (perte) => {
     setSelectedPerte(perte)
     setEditForm({
@@ -179,7 +162,7 @@ export default function PerteAdmin() {
 
   const handleUpdatePerte = async () => {
     try {
-      await api.put(`/pertes/${selectedPerte.id}`, {   // ✅ était : axios.put("http://localhost:8000/api/pertes/...")
+      await api.put(`/pertes/${selectedPerte.id}`, {   
         produit: editForm.quantite,
         commentaire: editForm.commentaire,
       })
