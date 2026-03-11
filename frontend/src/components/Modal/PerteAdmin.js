@@ -1,15 +1,12 @@
-import { useEffect, useMemo, useState } from "react"
-import api from "../../services/api" // 👈 import de votre instance centralisée
+import { useEffect, useMemo, useState, useRef, useCallback } from "react"
+import api from "../../services/api"
 import Header from "./Header"
-
-const PER_PAGE = 10
 
 export default function PerteAdmin() {
   const [pertes, setPertes] = useState([])
   const [loading, setLoading] = useState(true)
 
   const [serviceFilter, setServiceFilter] = useState("all")
-  const [currentPage, setCurrentPage] = useState(1)
   const [searchTerm, setSearchTerm] = useState("")
 
   const [showDeleteModal, setShowDeleteModal] = useState(false)
@@ -17,45 +14,35 @@ export default function PerteAdmin() {
 
   const [showEditModal, setShowEditModal] = useState(false)
   const [selectedPerte, setSelectedPerte] = useState(null)
-  const [editForm, setEditForm] = useState({
-    quantite: "",
-    commentaire: "",
-  })
+  const [editForm, setEditForm] = useState({ quantite: "", commentaire: "" })
 
   const [successMessage, setSuccessMessage] = useState(null)
 
+  // ─── DataTables refs ──────────────────────────────────────────────────────
+  const tableRef     = useRef(null)
+  const dtRef        = useRef(null)
+  const handleEditRef   = useRef(null)
+  const handleDeleteRef = useRef(null)
+
   useEffect(() => {
-    api.get("/pertes")                          
-      .then(res => {
-        setPertes(res.data.data || [])
-        setLoading(false)
-      })
+    api.get("/pertes")
+      .then(res => { setPertes(res.data.data || []); setLoading(false) })
       .catch(() => setLoading(false))
   }, [])
 
-  
   const exportPertes = async (categorie) => {
     try {
-      let url = "/pertes/export"              
-      if (categorie && categorie !== "tous") {
-        url += `?categorie=${encodeURIComponent(categorie)}`
-      }
-
-      const response = await api.get(url, { responseType: "blob" })  // ✅
-
+      let url = "/pertes/export"
+      if (categorie && categorie !== "tous") url += `?categorie=${encodeURIComponent(categorie)}`
+      const response = await api.get(url, { responseType: "blob" })
       const blob = new Blob([response.data], {
         type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
       })
-
       const link = document.createElement("a")
       link.href = window.URL.createObjectURL(blob)
-
-      const filename =
-        categorie && categorie !== "tous"
-          ? `pertes_${categorie.replaceAll(" / ", "_")}.xlsx`
-          : "pertes_tous.xlsx"
-
-      link.download = filename
+      link.download = categorie && categorie !== "tous"
+        ? `pertes_${categorie.replaceAll(" / ", "_")}.xlsx`
+        : "pertes_tous.xlsx"
       link.click()
     } catch (error) {
       console.error("Erreur export :", error)
@@ -63,25 +50,21 @@ export default function PerteAdmin() {
     }
   }
 
-  
   const filteredPertes = useMemo(() => {
     let filtered = pertes
-
     if (serviceFilter !== "all") {
       filtered = filtered.filter(p =>
         p.article?.categorie?.toLowerCase().includes(serviceFilter)
       )
     }
-
     if (searchTerm.trim()) {
       const term = searchTerm.toLowerCase().trim()
       filtered = filtered.filter(p => {
-        const articleLibelle = p.article?.libelle?.toLowerCase() || ""
+        const articleLibelle   = p.article?.libelle?.toLowerCase() || ""
         const articleCategorie = p.article?.categorie?.toLowerCase() || ""
-        const commentaire = p.commentaire?.toLowerCase() || ""
-        const produit = String(p.produit || "").toLowerCase()
-        const date = p.created_at ? new Date(p.created_at).toLocaleString("fr-FR").toLowerCase() : ""
-
+        const commentaire      = p.commentaire?.toLowerCase() || ""
+        const produit          = String(p.produit || "").toLowerCase()
+        const date             = p.created_at ? new Date(p.created_at).toLocaleString("fr-FR").toLowerCase() : ""
         return (
           articleLibelle.includes(term) ||
           articleCategorie.includes(term) ||
@@ -91,55 +74,34 @@ export default function PerteAdmin() {
         )
       })
     }
-
     return filtered
   }, [pertes, serviceFilter, searchTerm])
 
-  
   const sortedPertes = useMemo(() => {
     return [...filteredPertes].sort(
       (a, b) => new Date(b.created_at) - new Date(a.created_at)
     )
   }, [filteredPertes])
 
+  const handleServiceFilter = (service) => setServiceFilter(service || "all")
 
-  const totalPages = Math.ceil(sortedPertes.length / PER_PAGE)
+  const handleSearchChange = (e) => setSearchTerm(e.target.value)
 
-  const paginatedPertes = useMemo(() => {
-    const start = (currentPage - 1) * PER_PAGE
-    return sortedPertes.slice(start, start + PER_PAGE)
-  }, [sortedPertes, currentPage])
+  const handleClearSearch = () => setSearchTerm("")
 
-  const handleServiceFilter = (service) => {
-    setServiceFilter(service || "all")
-    setCurrentPage(1)
-  }
-
-  const handleSearchChange = (e) => {
-    setSearchTerm(e.target.value)
-    setCurrentPage(1)
-  }
-
-  const handleClearSearch = () => {
-    setSearchTerm("")
-    setCurrentPage(1)
-  }
-
- 
   const showToast = (type) => {
     setSuccessMessage(type)
     setTimeout(() => setSuccessMessage(null), 2000)
   }
 
-  
-  const handleDelete = (id) => {
+  const handleDelete = useCallback((id) => {
     setPerteToDelete(id)
     setShowDeleteModal(true)
-  }
+  }, [])
 
   const confirmDelete = async () => {
     try {
-      await api.delete(`/pertes/${perteToDelete}`)   
+      await api.delete(`/pertes/${perteToDelete}`)
       setPertes(prev => prev.filter(p => p.id !== perteToDelete))
       setShowDeleteModal(false)
       setPerteToDelete(null)
@@ -150,23 +112,18 @@ export default function PerteAdmin() {
     }
   }
 
-  
-  const handleEdit = (perte) => {
+  const handleEdit = useCallback((perte) => {
     setSelectedPerte(perte)
-    setEditForm({
-      quantite: perte.produit,
-      commentaire: perte.commentaire || "",
-    })
+    setEditForm({ quantite: perte.produit, commentaire: perte.commentaire || "" })
     setShowEditModal(true)
-  }
+  }, [])
 
   const handleUpdatePerte = async () => {
     try {
-      await api.put(`/pertes/${selectedPerte.id}`, {   
+      await api.put(`/pertes/${selectedPerte.id}`, {
         produit: editForm.quantite,
         commentaire: editForm.commentaire,
       })
-
       setPertes(prev =>
         prev.map(p =>
           p.id === selectedPerte.id
@@ -174,7 +131,6 @@ export default function PerteAdmin() {
             : p
         )
       )
-
       setShowEditModal(false)
       setSelectedPerte(null)
       showToast("edit")
@@ -182,6 +138,84 @@ export default function PerteAdmin() {
       alert("Erreur lors de la modification")
     }
   }
+
+  // ─── DataTables : tbody VIDE, lignes injectées via jQuery ─────────────────
+  useEffect(() => {
+    if (!tableRef.current || !window.$) return
+    const $ = window.$
+
+    handleEditRef.current   = handleEdit
+    handleDeleteRef.current = handleDelete
+
+    if (dtRef.current) {
+      $(tableRef.current).off("click", ".btn-edit-perte").off("click", ".btn-delete-perte")
+      dtRef.current.destroy()
+      dtRef.current = null
+      $(tableRef.current).find("tbody").empty()
+    }
+
+    const rows = sortedPertes.map((perte, index) => {
+      const encoded = encodeURIComponent(JSON.stringify(perte))
+      const dateStr = perte.created_at
+        ? new Date(perte.created_at).toLocaleString("fr-FR")
+        : "-"
+      return [
+        `<span class="fw-bold">${index + 1}</span>`,
+        `<span class="badge bg-warning text-dark">${perte.article?.categorie || "-"}</span>`,
+        perte.article?.libelle || "-",
+        `<span class="fw-bold">${perte.produit}</span>`,
+        `<span class="text-muted">${perte.commentaire || "—"}</span>`,
+        dateStr,
+        `<div class="btn-group btn-group-sm">
+          <button class="btn btn-outline-primary btn-edit-perte" data-perte="${encoded}" title="Modifier">✏️</button>
+          <button class="btn btn-outline-danger btn-delete-perte" data-id="${perte.id}" title="Supprimer">🗑️</button>
+        </div>`,
+      ]
+    })
+
+    dtRef.current = $(tableRef.current).DataTable({
+      data: rows,
+      order: [],
+      pageLength: 10,
+      lengthMenu: [5, 10, 25, 50, 100],
+      retrieve: true,
+      searching: false,
+      ordering: false,
+      language: {
+        lengthMenu: "Afficher _MENU_ lignes",
+        info:       "Affichage de _START_ à _END_ sur _TOTAL_ entrées",
+        paginate: {
+          first:    "Premier",
+          last:     "Dernier",
+          next:     "Suivant ➡",
+          previous: "⬅ Précédent",
+        },
+        zeroRecords: "Aucune perte trouvée.",
+      },
+      columnDefs: [{ orderable: false, targets: "_all" }],
+    })
+
+    // Délégation clics
+    $(tableRef.current).on("click", ".btn-edit-perte", function () {
+      try {
+        const perte = JSON.parse(decodeURIComponent($(this).attr("data-perte")))
+        if (handleEditRef.current) handleEditRef.current(perte)
+      } catch (e) { console.error(e) }
+    })
+
+    $(tableRef.current).on("click", ".btn-delete-perte", function () {
+      const id = parseInt($(this).attr("data-id"))
+      if (handleDeleteRef.current) handleDeleteRef.current(id)
+    })
+
+    return () => {
+      if (dtRef.current) {
+        $(tableRef.current).off("click", ".btn-edit-perte").off("click", ".btn-delete-perte")
+        dtRef.current.destroy()
+        dtRef.current = null
+      }
+    }
+  }, [sortedPertes]) // eslint-disable-line
 
   if (loading) {
     return <p className="text-center mt-4">Chargement des pertes...</p>
@@ -196,13 +230,12 @@ export default function PerteAdmin() {
       />
 
       <div className="text-center" style={{ marginTop: "2.5cm" }}>
-        <h4 className="mb-3 text-danger fw-bold">
-          📉 Gestion des pertes
-        </h4>
+        <h4 className="mb-3 text-danger fw-bold">📉 Gestion des pertes</h4>
       </div>
 
       <div className="d-flex justify-content-between align-items-center mb-3">
 
+        {/* Export */}
         <div>
           <button className="btn btn-success dropdown-toggle" data-bs-toggle="dropdown">
             📤 Exporter
@@ -220,80 +253,48 @@ export default function PerteAdmin() {
           </ul>
         </div>
 
+        {/* Recherche */}
         <div style={{ width: "60%" }}>
-          <div className="mb-4 mb-0">
-            <div className="row align-items-center">
-              <div className="col-md-8">
-                <div className="input-group">
-                  <span className="input-group-text bg-light">
-                    <i className="bi bi-search"></i>
-                  </span>
-                  <input
-                    type="text"
-                    className="form-control"
-                    placeholder="Rechercher ..."
-                    value={searchTerm}
-                    onChange={handleSearchChange}
-                  />
-                  {searchTerm && (
-                    <button
-                      className="btn btn-outline-secondary"
-                      type="button"
-                      onClick={handleClearSearch}
-                      title="Effacer la recherche"
-                    >
-                      <i className="bi bi-x-lg"></i>
-                    </button>
-                  )}
-                </div>
-              </div>
-              <div className="col-md-4 text-end">
+          <div className="row align-items-center">
+            <div className="col-md-8">
+              <div className="input-group">
+                <span className="input-group-text bg-light">
+                  <i className="bi bi-search"></i>
+                </span>
+                <input
+                  type="text"
+                  className="form-control"
+                  placeholder="Rechercher ..."
+                  value={searchTerm}
+                  onChange={handleSearchChange}
+                />
                 {searchTerm && (
-                  <div className="mt-4">
-                    <span className="badge bg-info text-dark fs-6">
-                      {filteredPertes.length} résultat(s) trouvé(s)
-                    </span>
-                  </div>
+                  <button
+                    className="btn btn-outline-secondary"
+                    type="button"
+                    onClick={handleClearSearch}
+                    title="Effacer la recherche"
+                  >
+                    <i className="bi bi-x-lg"></i>
+                  </button>
                 )}
               </div>
+            </div>
+            <div className="col-md-4 text-end">
+              {searchTerm && (
+                <span className="badge bg-info text-dark fs-6">
+                  {filteredPertes.length} résultat(s) trouvé(s)
+                </span>
+              )}
             </div>
           </div>
         </div>
 
       </div>
 
-      {/* PAGINATION TOP */}
-      <div className="container mt-3 pt-4">
-        <div className="row align-items-center mb-2">
-          <div className="col-4 text-start">
-            <button
-              className="btn btn-outline-secondary btn-sm"
-              disabled={currentPage === 1}
-              onClick={() => setCurrentPage(p => p - 1)}
-            >
-              ⬅ Précédent
-            </button>
-          </div>
-          <div className="col-4 text-center">
-            <span className="fw-bold">
-              Page {currentPage} / {totalPages || 1}
-            </span>
-          </div>
-          <div className="col-4 text-end">
-            <button
-              className="btn btn-outline-secondary btn-sm"
-              disabled={currentPage === totalPages}
-              onClick={() => setCurrentPage(p => p + 1)}
-            >
-              Suivant ➡
-            </button>
-          </div>
-        </div>
-      </div>
-
-      {/* TABLE */}
+      {/* ─── Tableau — tbody VIDE, DataTables injecte les lignes ─────────── */}
       <div className="table-responsive shadow-sm">
-        <table className="table table-hover align-middle">
+        <table ref={tableRef} className="table table-hover align-middle">
           <thead className="bg-dark text-white">
             <tr>
               <th>#</th>
@@ -305,49 +306,8 @@ export default function PerteAdmin() {
               <th className="text-center">Actions</th>
             </tr>
           </thead>
-          <tbody>
-            {paginatedPertes.length === 0 && (
-              <tr>
-                <td colSpan="7" className="text-center text-muted">
-                  Aucune perte trouvée
-                </td>
-              </tr>
-            )}
-            {paginatedPertes.map((perte, index) => (
-              <tr key={perte.id}>
-                <td className="fw-bold">
-                  {(currentPage - 1) * PER_PAGE + index + 1}
-                </td>
-                <td>
-                  <span className="badge bg-warning text-dark">
-                    {perte.article?.categorie}
-                  </span>
-                </td>
-                <td>{perte.article?.libelle}</td>
-                <td className="fw-bold">{perte.produit}</td>
-                <td className="text-muted">{perte.commentaire || "—"}</td>
-                <td>{new Date(perte.created_at).toLocaleString()}</td>
-                <td className="text-center">
-                  <div className="btn-group btn-group-sm">
-                    <button
-                      className="btn btn-outline-primary"
-                      title="Modifier"
-                      onClick={() => handleEdit(perte)}
-                    >
-                      ✏️
-                    </button>
-                    <button
-                      className="btn btn-outline-danger"
-                      title="Supprimer"
-                      onClick={() => handleDelete(perte.id)}
-                    >
-                      🗑️
-                    </button>
-                  </div>
-                </td>
-              </tr>
-            ))}
-          </tbody>
+          {/* tbody vide — DataTables gère les lignes et la pagination */}
+          <tbody></tbody>
         </table>
       </div>
 

@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from "react"
+import { useEffect, useState, useCallback, useRef } from "react"
 import { useAuth } from "../contexts/AuthContext"
 import Header from "../components/Modal/Header"
 import Footer from "../components/Footer"
@@ -93,13 +93,18 @@ const AdminDashboard = () => {
 
   const [searchTerm, setSearchTerm] = useState("")
   const [sortConfig, setSortConfig] = useState({ key: null, direction: "asc" })
-  const [currentPage, setCurrentPage] = useState(1)
-  const articlesPerPage = 10
   const [selectedCategory, setSelectedCategory] = useState("")
+
+  // ─── DataTables refs ───────────────────────────────────────────────────────
+  const tableRef = useRef(null)
+  const dtRef    = useRef(null)
+
+  // Stocker les handlers dans des refs pour éviter les fuites mémoire
+  const handleEditRef   = useRef(null)
+  const handleDeleteRef = useRef(null)
 
   const handleCategoryFilter = (category) => {
     setSelectedCategory(category)
-    setCurrentPage(1)
   }
 
   const fetchArticles = useCallback(async () => {
@@ -146,10 +151,9 @@ const AdminDashboard = () => {
     setShowModal(true)
   }
 
-  const handleEdit = (article) => {
+  const handleEdit = useCallback((article) => {
     setEditingArticle(article)
     setFormDataArticle({
-      // ✅ ID toujours en string, jamais converti en number
       id: article.id != null ? String(article.id).trim() : "",
       categorie: article.categorie || "resto",
       libelle: article.libelle || "",
@@ -158,7 +162,7 @@ const AdminDashboard = () => {
       prix: article.prix != null ? String(article.prix) : "",
     })
     setShowModal(true)
-  }
+  }, [])
 
   const handleSubmitArticle = async (e) => {
     e.preventDefault()
@@ -168,8 +172,6 @@ const AdminDashboard = () => {
     const produitNum = formDataArticle.produit === "" || formDataArticle.produit == null
       ? 0 : parseNumber(formDataArticle.produit)
     const prixNum = parseNumber(formDataArticle.prix)
-
-    // ✅ ID nettoyé en string propre
     const idValue = formDataArticle.id ? String(formDataArticle.id).trim() : ""
 
     if (produitNum == null || produitNum < 0) {
@@ -180,20 +182,15 @@ const AdminDashboard = () => {
       showToast("Le champ Prix doit être un nombre positif.", "warning")
       setSaveLoading(false); return
     }
-
-    // ✅ Validation ID uniquement à la création
     if (!editingArticle) {
       if (!idValue) {
         showToast("L'ID est obligatoire.", "warning")
         setSaveLoading(false); return
       }
-      // ✅ max:50 aligné avec le backend (ArticleImportController)
       if (idValue.length > 50) {
         showToast("L'ID ne doit pas dépasser 50 caractères.", "warning")
         setSaveLoading(false); return
       }
-      // ✅ Comparaison insensible à la casse + trim des deux côtés
-      // L'ID peut être dupliqué : pas de vérification d'unicité côté frontend
     }
 
     const payload = {
@@ -226,7 +223,7 @@ const AdminDashboard = () => {
     }
   }
 
-  const confirmDelete = (pk) => { setArticleToDelete(pk) }
+  const confirmDelete = useCallback((pk) => { setArticleToDelete(pk) }, [])
 
   const handleDelete = async () => {
     if (!articleToDelete) return
@@ -250,37 +247,37 @@ const AdminDashboard = () => {
     setSortConfig({ key, direction })
   }
 
-  const getSortIcon = (key) => {
-    if (sortConfig.key !== key) return <span className="text-muted">⇅</span>
-    return sortConfig.direction === "asc" ? <span>▲</span> : <span>▼</span>
-  }
-
   const comparator = (a, b) => {
     const key = sortConfig.key
     if (!key) return 0
     let aVal = a[key], bVal = b[key]
-
     if (key === "date") {
       aVal = aVal ? new Date(aVal).getTime() : 0
       bVal = bVal ? new Date(bVal).getTime() : 0
     } else if (["produit", "prix"].includes(key)) {
-      // ✅ produit et prix → tri numérique
       aVal = Number(aVal) || 0
       bVal = Number(bVal) || 0
     } else if (key === "id") {
-      // ✅ ID → tri alphabétique string (supporte "ART-001", "1", "B2"...)
       aVal = String(aVal ?? "").trim().toLowerCase()
       bVal = String(bVal ?? "").trim().toLowerCase()
     } else {
       aVal = (aVal ?? "").toString().toLowerCase()
       bVal = (bVal ?? "").toString().toLowerCase()
     }
-
     if (aVal < bVal) return sortConfig.direction === "asc" ? -1 : 1
     if (aVal > bVal) return sortConfig.direction === "asc" ? 1 : -1
     return 0
   }
 
+  const getCategoryBadgeClass = (categorie) => {
+    if (!categorie) return "bg-secondary"
+    if (categorie.includes("resto")) return "bg-primary"
+    if (categorie.includes("snack")) return "bg-warning text-dark"
+    if (categorie.includes("detente")) return "bg-info text-dark"
+    return "bg-secondary"
+  }
+
+  // ─── filteredArticles ──────────────────────────────────────────────────────
   const sortedArticles = [...articles].sort(comparator)
 
   const filteredArticles = sortedArticles.filter((article) => {
@@ -292,7 +289,6 @@ const AdminDashboard = () => {
       String(article.produit).toLowerCase().includes(term) ||
       article.unite?.toLowerCase().includes(term) ||
       String(article.prix).toLowerCase().includes(term) ||
-      // ✅ Recherche par ID en string
       String(article.id).toLowerCase().includes(term) ||
       (article.date && new Date(article.date).toLocaleDateString("fr-FR").includes(term))
 
@@ -322,19 +318,86 @@ const AdminDashboard = () => {
     return matchesSearch && matchesCategory && matchesDateRange
   })
 
-  const totalPages = Math.ceil(filteredArticles.length / articlesPerPage)
-  const indexOfLast = currentPage * articlesPerPage
-  const indexOfFirst = indexOfLast - articlesPerPage
-  const currentArticles = filteredArticles.slice(indexOfFirst, indexOfLast)
-  const paginate = (pageNumber) => setCurrentPage(pageNumber)
+  // ─── DataTables : reconstruit les lignes via l'API jQuery ─────────────────
+  // On N'utilise PAS le rendu React dans <tbody> pour éviter le conflit DOM
+  useEffect(() => {
+    if (!tableRef.current || !window.$) return
+    const $ = window.$
 
-  const getCategoryBadgeClass = (categorie) => {
-    if (!categorie) return "bg-secondary"
-    if (categorie.includes("resto")) return "bg-primary"
-    if (categorie.includes("snack")) return "bg-warning text-dark"
-    if (categorie.includes("detente")) return "bg-info text-dark"
-    return "bg-secondary"
-  }
+    // Mettre à jour les refs des handlers courants
+    handleEditRef.current   = handleEdit
+    handleDeleteRef.current = confirmDelete
+
+    // Détruire proprement l'instance précédente
+    if (dtRef.current) {
+      dtRef.current.destroy()
+      dtRef.current = null
+      // Vider le tbody manuellement pour éviter les conflits React/DataTables
+      $(tableRef.current).find("tbody").empty()
+    }
+
+    // Construire les lignes HTML via DataTables (pas via React)
+    const rows = filteredArticles.map((article) => {
+      const badgeClass = getCategoryBadgeClass(article.categorie)
+      const dateStr = article.date
+        ? new Date(article.date).toLocaleDateString("fr-FR")
+        : "-"
+      const pk = article.pk ?? article.id ?? ""
+      return [
+        article.id ?? "",
+        `<span class="badge ${badgeClass}">${article.categorie ?? ""}</span>`,
+        article.libelle ?? "",
+        article.produit ?? "",
+        article.unite ?? "",
+        article.prix ?? "",
+        dateStr,
+        `<button class="btn btn-sm btn-outline-primary me-1 btn-edit" data-pk='${JSON.stringify(article)}'>Modifier</button>
+         <button class="btn btn-sm btn-outline-danger btn-delete" data-pk="${pk}" data-bs-toggle="modal" data-bs-target="#deleteModal">Supprimer</button>`,
+      ]
+    })
+
+    dtRef.current = $(tableRef.current).DataTable({
+      data: rows,
+      order: [],
+      pageLength: 10,
+      lengthMenu: [5, 10, 25, 50, 100],
+      retrieve: true,
+      language: {
+        search:     "🔍 Rechercher :",
+        lengthMenu: "Afficher _MENU_ lignes",
+        info:       "Affichage de _START_ à _END_ sur _TOTAL_ entrées",
+        paginate: {
+          first:    "Premier",
+          last:     "Dernier",
+          next:     "Suivant ➡",
+          previous: "⬅ Précédent",
+        },
+        zeroRecords: "Aucun résultat trouvé",
+      },
+      columnDefs: [{ orderable: false, targets: -1 }],
+    })
+
+    // ── Délégation des clics sur les boutons générés par DataTables ──
+    $(tableRef.current).off("click", ".btn-edit").on("click", ".btn-edit", function () {
+      try {
+        const article = JSON.parse($(this).attr("data-pk"))
+        if (handleEditRef.current) handleEditRef.current(article)
+      } catch (e) { console.error("Erreur parsing article edit:", e) }
+    })
+
+    $(tableRef.current).off("click", ".btn-delete").on("click", ".btn-delete", function () {
+      const pk = $(this).attr("data-pk")
+      if (handleDeleteRef.current) handleDeleteRef.current(pk)
+    })
+
+    return () => {
+      if (dtRef.current) {
+        $(tableRef.current).off("click", ".btn-edit").off("click", ".btn-delete")
+        dtRef.current.destroy()
+        dtRef.current = null
+      }
+    }
+  }, [filteredArticles]) // eslint-disable-line
 
   if (loading)
     return (
@@ -399,19 +462,7 @@ const AdminDashboard = () => {
                           disabled={!startDate}
                         />
                       </div>
-                      <input
-                        type="text"
-                        className="form-control form-control-sm"
-                        placeholder="Rechercher..."
-                        style={{ width: "200px" }}
-                        value={searchTerm}
-                        onChange={(e) => setSearchTerm(e.target.value)}
-                      />
-                      {(startDate !== getTodayISO() || endDate !== getTodayISO() || searchTerm) && (
-                        <button className="btn btn-outline-danger btn-sm" onClick={handleReset}>
-                          🔄 Effacer
-                        </button>
-                      )}
+                      
                       <span className="text-muted small ms-2">
                         {startDate && endDate
                           ? `Période: ${new Date(startDate).toLocaleDateString('fr-FR')} - ${new Date(endDate).toLocaleDateString('fr-FR')}`
@@ -440,91 +491,36 @@ const AdminDashboard = () => {
                       📥 Importer Excel
                     </button>
                     <div style={{ width: "150px", height: "35px" }}>
-                      <ExportExel currentArticles={currentArticles} />
+                      <ExportExel currentArticles={filteredArticles} />
                     </div>
                   </div>
                 </div>
               </div>
 
+              {/* ─── Tableau géré entièrement par DataTables ──────────────── */}
               <div className="card shadow" style={{ backgroundColor: "rgba(255,255,255,0.06)" }}>
                 <div className="card-body">
                   <div className="table-responsive">
-                    <table className="table table-hover table-bordered bg-white">
+                    <table ref={tableRef} className="table table-hover table-bordered bg-white">
                       <thead className="table-light">
                         <tr>
-                          <th onClick={() => requestSort("id")} style={{ cursor: "pointer" }}>ID {getSortIcon("id")}</th>
-                          <th onClick={() => requestSort("categorie")} style={{ cursor: "pointer" }}>Catégorie {getSortIcon("categorie")}</th>
-                          <th onClick={() => requestSort("libelle")} style={{ cursor: "pointer" }}>Libellé {getSortIcon("libelle")}</th>
-                          <th onClick={() => requestSort("produit")} style={{ cursor: "pointer" }}>Quantité {getSortIcon("produit")}</th>
-                          <th onClick={() => requestSort("unite")} style={{ cursor: "pointer" }}>Unité {getSortIcon("unite")}</th>
-                          <th onClick={() => requestSort("prix")} style={{ cursor: "pointer" }}>Prix {getSortIcon("prix")}</th>
-                          <th onClick={() => requestSort("date")} style={{ cursor: "pointer" }}>Date {getSortIcon("date")}</th>
+                          <th>ID</th>
+                          <th>Catégorie</th>
+                          <th>Libellé</th>
+                          <th>Quantité</th>
+                          <th>Unité</th>
+                          <th>Prix</th>
+                          <th>Date</th>
                           <th>Actions</th>
                         </tr>
                       </thead>
-                      <tbody>
-                        {currentArticles.map((article) => (
-                          <tr key={article.pk ?? article.id ?? Math.random()}>
-                            <td>{article.id}</td>
-                            <td>
-                              <span className={`badge ${getCategoryBadgeClass(article.categorie)}`}>
-                                {article.categorie}
-                              </span>
-                            </td>
-                            <td>{article.libelle}</td>
-                            <td>{article.produit}</td>
-                            <td>{article.unite}</td>
-                            <td>{article.prix}</td>
-                            <td>{article.date ? new Date(article.date).toLocaleDateString("fr-FR") : "-"}</td>
-                            <td>
-                              <button className="btn btn-sm btn-outline-primary me-1" onClick={() => handleEdit(article)}>
-                                Modifier
-                              </button>
-                              <button
-                                className="btn btn-sm btn-outline-danger"
-                                onClick={() => confirmDelete(article.pk)}
-                                data-bs-toggle="modal"
-                                data-bs-target="#deleteModal"
-                              >
-                                Supprimer
-                              </button>
-                            </td>
-                          </tr>
-                        ))}
-                        {filteredArticles.length === 0 && (
-                          <tr>
-                            <td colSpan={8} className="text-center text-muted">
-                              {searchTerm || startDate || endDate || selectedCategory
-                                ? "Aucun article ne correspond aux critères de recherche."
-                                : "Aucun article disponible."}
-                            </td>
-                          </tr>
-                        )}
-                      </tbody>
+                      {/* tbody vide — DataTables injecte les lignes via data: rows */}
+                      <tbody></tbody>
                     </table>
                   </div>
                 </div>
               </div>
-
-              {totalPages > 1 && (
-                <nav className="mt-3">
-                  <ul className="pagination d-flex justify-content-between align-items-center">
-                    <li className={`page-item ${currentPage === 1 ? "disabled" : ""}`}>
-                      <button className="page-link" onClick={() => paginate(Math.max(currentPage - 1, 1))}>⬅ Précédent</button>
-                    </li>
-                    <div className="d-flex">
-                      {[...Array(totalPages)].map((_, i) => (
-                        <li key={i} className={`page-item mx-1 ${currentPage === i + 1 ? "active" : ""}`}>
-                          <button className="page-link" onClick={() => paginate(i + 1)}>{i + 1}</button>
-                        </li>
-                      ))}
-                    </div>
-                    <li className={`page-item ${currentPage === totalPages ? "disabled" : ""}`}>
-                      <button className="page-link" onClick={() => paginate(Math.min(currentPage + 1, totalPages))}>Suivant ➡</button>
-                    </li>
-                  </ul>
-                </nav>
-              )}
+              {/* ─── Pagination gérée automatiquement par DataTables ───────── */}
 
               <Resume articles={articles} />
             </>

@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo, useRef } from "react"
+import { useEffect, useState, useMemo, useRef, useCallback } from "react"
 import { useNavigate } from "react-router-dom"
 import Header from "../Modal/Header"
 import CreerCompte from "../Modal/CreerCompte"
@@ -18,11 +18,15 @@ export default function NotificationsPage() {
   const [clicked, setClicked] = useState(false)
   const [searchTerm, setSearchTerm] = useState("")
   const [sortConfig, setSortConfig] = useState({ key: "date_ajout", direction: "desc" })
-  const [currentPage, setCurrentPage] = useState(1)
   const [loading, setLoading] = useState(true)
   const [showWeekView, setShowWeekView] = useState(false)
 
   const processingIds = useRef(new Set())
+
+  // ─── DataTables refs ──────────────────────────────────────────────────────
+  const tableRef     = useRef(null)
+  const dtRef        = useRef(null)
+  const handleRowRef = useRef(null)   // handler courant accessible depuis jQuery
 
   const [showUserModal, setShowUserModal] = useState(false)
   const [formDataUser, setFormDataUser] = useState({})
@@ -37,10 +41,9 @@ export default function NotificationsPage() {
 
   const [serviceFilter, setServiceFilter] = useState("all")
   const [categoryFilter] = useState("all")
-  const itemsPerPage = 10
   const navigate = useNavigate()
 
-  const getServiceFromCategorie = (categorie = "") => (categorie?.split("/")?.[1] || "").toLowerCase()
+  const getServiceFromCategorie  = (categorie = "") => (categorie?.split("/")?.[1] || "").toLowerCase()
   const getCategoryFromCategorie = (categorie = "") => (categorie?.split("/")?.[0] || "").toLowerCase()
 
   const getTodayStr = () => {
@@ -48,34 +51,20 @@ export default function NotificationsPage() {
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`
   }
 
-  const handleServiceFilter = (service) => {
-    setServiceFilter(service || "all")
-    setCurrentPage(1)
-  }
+  const handleServiceFilter = (service) => setServiceFilter(service || "all")
 
   const handleSetView = (value) => {
     setShowWeekView(value)
     localStorage.setItem("showWeekView", JSON.stringify(value))
-    if (!value) {
-      setTimeout(() => navigate("/admin"), 300)
-    } else {
-      navigate(`/notifications?view=historique`)
-    }
+    if (!value) setTimeout(() => navigate("/admin"), 300)
+    else navigate(`/notifications?view=historique`)
   }
 
   useEffect(() => {
     const searchParams = new URLSearchParams(window.location.search)
     const viewParam = searchParams.get("view")
-    if (viewParam === "historique") {
-      setShowWeekView(true)
-      localStorage.setItem("showWeekView", JSON.stringify(true))
-      return
-    }
-    if (viewParam === "actuelle") {
-      setShowWeekView(false)
-      localStorage.setItem("showWeekView", JSON.stringify(false))
-      return
-    }
+    if (viewParam === "historique") { setShowWeekView(true); localStorage.setItem("showWeekView", JSON.stringify(true)); return }
+    if (viewParam === "actuelle")   { setShowWeekView(false); localStorage.setItem("showWeekView", JSON.stringify(false)); return }
     const savedView = localStorage.getItem("showWeekView")
     if (savedView) setShowWeekView(JSON.parse(savedView))
   }, [])
@@ -99,11 +88,10 @@ export default function NotificationsPage() {
 
   useEffect(() => {
     fetchNotifications()
-
     const channel = echo.channel("notifications")
     channel.listen(".notification.created", (notificationData) => {
       if (!notificationData) return
-      const notifService = getServiceFromCategorie(notificationData.categorie)
+      const notifService  = getServiceFromCategorie(notificationData.categorie)
       const notifCategory = getCategoryFromCategorie(notificationData.categorie)
       if (
         (serviceFilter === "all" || notifService === serviceFilter) &&
@@ -112,62 +100,48 @@ export default function NotificationsPage() {
         setNotifications((prev) => [{ ...notificationData, lu: false }, ...prev])
       }
     })
+    return () => { channel.stopListening(".notification.created"); echo.leave("notifications") }
+  }, [serviceFilter, categoryFilter]) // eslint-disable-line
 
-    return () => {
-      channel.stopListening(".notification.created")
-      echo.leave("notifications")
-    }
-  }, [serviceFilter, categoryFilter])
-
-  useEffect(() => { fetchNotifications() }, [serviceFilter, categoryFilter])
+  useEffect(() => { fetchNotifications() }, [serviceFilter, categoryFilter]) // eslint-disable-line
 
   useEffect(() => {
-    const today = getTodayStr()
-    setDateDebut(today)
-    setDateFin(today)
+    const today = getTodayStr(); setDateDebut(today); setDateFin(today)
   }, [])
 
   useEffect(() => {
     const today = getTodayStr()
     if (!showWeekView) {
-      setDateDebut(today)
-      setDateFin(today)
+      setDateDebut(today); setDateFin(today)
     } else {
-      const past = new Date()
-      past.setDate(past.getDate() - 30)
+      const past = new Date(); past.setDate(past.getDate() - 30)
       const pastStr = `${past.getFullYear()}-${String(past.getMonth() + 1).padStart(2, "0")}-${String(past.getDate()).padStart(2, "0")}`
-      setDateDebut(pastStr)
-      setDateFin(today)
+      setDateDebut(pastStr); setDateFin(today)
     }
   }, [showWeekView])
 
-  const handleRowClick = async (notification) => {
+  // ✅ useCallback pour stabiliser la référence du handler
+  const handleRowClick = useCallback(async (notification) => {
     if (notification.lu) return
     if (processingIds.current.has(notification.id)) return
     processingIds.current.add(notification.id)
 
-    setNotifications((prev) =>
-      prev.map((n) => n.id === notification.id ? { ...n, lu: true } : n)
-    )
+    setNotifications((prev) => prev.map((n) => n.id === notification.id ? { ...n, lu: true } : n))
 
     try {
       const result = await markNotificationAsRead(notification.id)
       if (!result || !result.success) {
-        setNotifications((prev) =>
-          prev.map((n) => n.id === notification.id ? { ...n, lu: false } : n)
-        )
+        setNotifications((prev) => prev.map((n) => n.id === notification.id ? { ...n, lu: false } : n))
       } else {
         window.dispatchEvent(new CustomEvent("notificationMarkedAsRead", { detail: { id: notification.id } }))
       }
     } catch (err) {
       console.error("❌ Erreur réseau, rollback:", err)
-      setNotifications((prev) =>
-        prev.map((n) => n.id === notification.id ? { ...n, lu: false } : n)
-      )
+      setNotifications((prev) => prev.map((n) => n.id === notification.id ? { ...n, lu: false } : n))
     } finally {
       processingIds.current.delete(notification.id)
     }
-  }
+  }, [])
 
   const parseDate = (dateString) => {
     if (!dateString) return null
@@ -195,29 +169,23 @@ export default function NotificationsPage() {
     return String(timeString).substring(0, 5)
   }
 
-  // ─────────────────────────────────────────────
-  // ✅ BACKUP & DELETE — avec Toast 2s
-  // ─────────────────────────────────────────────
   const handleBackupDelete = async () => {
     setLoading(true)
     try {
       await backupAndDeleteNotifications()
-      setShowModal(false)
-      setClicked(false)
+      setShowModal(false); setClicked(false)
       await fetchNotifications()
-      // ✅ Toast succès affiché 2s après suppression
       showToast("Toutes les notifications ont été supprimées avec succès !", "success")
     } catch (err) {
       console.error("❌ Erreur suppression:", err)
-      setShowModal(false)
-      setClicked(false)
-      // ✅ Toast erreur
+      setShowModal(false); setClicked(false)
       showToast("Erreur lors de la suppression des notifications.", "error")
     } finally {
       setLoading(false)
     }
   }
 
+  // ─── Données filtrées + triées — INCHANGÉES ───────────────────────────────
   const filtered = useMemo(() => {
     return notifications.filter((n) => {
       if (!n.date_ajout) return false
@@ -262,28 +230,115 @@ export default function NotificationsPage() {
         return sortConfig.direction === "asc" ? dA - dB : dB - dA
       }
       if (!isNaN(parseFloat(aVal)) && !isNaN(parseFloat(bVal))) {
-        return sortConfig.direction === "asc"
-          ? parseFloat(aVal) - parseFloat(bVal)
-          : parseFloat(bVal) - parseFloat(aVal)
+        return sortConfig.direction === "asc" ? parseFloat(aVal) - parseFloat(bVal) : parseFloat(bVal) - parseFloat(aVal)
       }
-      return sortConfig.direction === "asc"
-        ? String(aVal).localeCompare(String(bVal))
-        : String(bVal).localeCompare(String(aVal))
+      return sortConfig.direction === "asc" ? String(aVal).localeCompare(String(bVal)) : String(bVal).localeCompare(String(aVal))
     })
     return sortable
   }, [filtered, sortConfig])
 
-  const totalPages = Math.ceil(sortedData.length / itemsPerPage)
-  const paginatedData = sortedData.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage)
-
   const requestSort = (key) => {
-    setSortConfig((prev) => ({
-      key,
-      direction: prev.key === key && prev.direction === "asc" ? "desc" : "asc",
-    }))
+    setSortConfig((prev) => ({ key, direction: prev.key === key && prev.direction === "asc" ? "desc" : "asc" }))
   }
 
   const unreadCount = notifications.filter((n) => !n.lu).length
+
+  // ─── DataTables : tbody VIDE, lignes injectées via jQuery data ────────────
+  // Évite le conflit insertBefore/removeChild entre React et DataTables
+  useEffect(() => {
+    if (!tableRef.current || !window.$) return
+    const $ = window.$
+
+    // Toujours mettre à jour le ref du handler courant (closure fraîche)
+    handleRowRef.current = handleRowClick
+
+    // Détruire proprement
+    if (dtRef.current) {
+      $(tableRef.current).off("click", ".dt-row-click")
+      dtRef.current.destroy()
+      dtRef.current = null
+      $(tableRef.current).find("tbody").empty()
+    }
+
+    // Construire les lignes pour DataTables
+    const rows = sortedData.map((n, index) => {
+      const isRead     = n.lu === true
+      const rowStyle   = isRead
+        ? "background-color:#ffffff;cursor:default;"
+        : "background-color:#fff3cd;cursor:pointer;"
+      const badgeClass = isRead ? "bg-success" : "bg-warning text-dark"
+      const badgeTxt   = isRead ? "✓ Lue" : "● Non lue"
+      const produitCss = n.produit > 0 ? "color:green;font-weight:bold"
+        : n.produit < 0 ? "color:red;font-weight:bold" : ""
+      const produitTxt = `${n.produit > 0 ? "+" : ""}${n.produit || "0"}`
+      const prixTxt    = n.prix ? `${parseFloat(n.prix).toLocaleString("fr-FR")} Ar` : "-"
+      // Sérialiser la notif entière pour la récupérer au clic
+      const encoded    = encodeURIComponent(JSON.stringify(n))
+
+      return [
+        index + 1,
+        `<span class="dt-row-click" data-notif="${encoded}" style="${rowStyle};display:block">${n.categorie || "-"}</span>`,
+        `<strong class="dt-row-click" data-notif="${encoded}" style="${rowStyle}">${n.libelle || "-"}</strong>`,
+        `<span class="dt-row-click" data-notif="${encoded}" style="${rowStyle};${produitCss}">${produitTxt}</span>`,
+        `<span class="dt-row-click" data-notif="${encoded}" style="${rowStyle}">${n.unite || "-"}</span>`,
+        `<span class="dt-row-click" data-notif="${encoded}" style="${rowStyle}">${prixTxt}</span>`,
+        `<span class="dt-row-click" data-notif="${encoded}" style="${rowStyle}">${formatDateFR(n.date_ajout)}</span>`,
+        `<span class="dt-row-click" data-notif="${encoded}" style="${rowStyle}">${formatTime(n.heure_ajout)}</span>`,
+        `<span class="badge ${badgeClass} dt-row-click" data-notif="${encoded}" style="padding:6px 12px;font-size:12px;font-weight:600;min-width:80px;text-align:center;display:inline-block">${badgeTxt}</span>`,
+      ]
+    })
+
+    dtRef.current = $(tableRef.current).DataTable({
+      data: rows,
+      order: [],
+      pageLength: 10,
+      lengthMenu: [5, 10, 25, 50, 100],
+      retrieve: true,
+      ordering: false,   // tri géré par React (sortedData)
+      searching: false,  // recherche gérée par React (filtered)
+      language: {
+        lengthMenu: "Afficher _MENU_ lignes",
+        info:       "Affichage de _START_ à _END_ sur _TOTAL_ entrées",
+        paginate: {
+          first:    "Premier",
+          last:     "Dernier",
+          next:     "Suivant ➡",
+          previous: "⬅ Précédent",
+        },
+        zeroRecords: "Aucune notification trouvée.",
+      },
+      columnDefs: [{ orderable: false, targets: "_all" }],
+      // Colorer les lignes selon statut lu/non-lu
+      createdRow: function(row, data, dataIndex) {
+        const notif = sortedData[dataIndex]
+        if (notif && !notif.lu) {
+          $(row).css({ "background-color": "#fff3cd", "cursor": "pointer" })
+          $(row).hover(
+            function() { $(this).css("background-color", "#ffe69c") },
+            function() { $(this).css("background-color", "#fff3cd") }
+          )
+        } else {
+          $(row).css({ "background-color": "#ffffff", "cursor": "default" })
+        }
+      },
+    })
+
+    // ✅ Délégation du clic — appelle handleRowRef.current (toujours à jour)
+    $(tableRef.current).on("click", ".dt-row-click", function () {
+      try {
+        const notif = JSON.parse(decodeURIComponent($(this).attr("data-notif")))
+        if (handleRowRef.current) handleRowRef.current(notif)
+      } catch (e) { console.error("Erreur parsing notif:", e) }
+    })
+
+    return () => {
+      if (dtRef.current) {
+        $(tableRef.current).off("click", ".dt-row-click")
+        dtRef.current.destroy()
+        dtRef.current = null
+      }
+    }
+  }, [sortedData]) // eslint-disable-line
 
   if (loading) {
     return (
@@ -301,16 +356,7 @@ export default function NotificationsPage() {
   return (
     <div className="container-fluid p-4">
 
-      {/* ✅ TOAST NOTIFICATION */}
       <ToastNotification toast={toast} onClose={clearToast} duration={2000} />
-
-      <style>{`
-        .notif-row { transition: background-color 0.2s ease; }
-        .notif-row.is-unread { background-color: #fff3cd !important; cursor: pointer; }
-        .notif-row.is-unread:hover { background-color: #ffe69c !important; outline: 2px solid #ffc107; outline-offset: -2px; }
-        .notif-row.is-read { background-color: #ffffff !important; cursor: default; }
-        .notif-row.is-read:hover { background-color: #f8f9fa !important; }
-      `}</style>
 
       <div>
 
@@ -325,81 +371,62 @@ export default function NotificationsPage() {
           />
         </div>
 
-        {/* ── FILTRES ── */}
+        {/* ── FILTRES — INCHANGÉS ── */}
         <div className="card mb-3">
           <div className="card-body">
-            <div className="d-flex align-items gap-5 flex-wrap">
+            <div className="d-flex justify-content-between align-items-start flex-wrap gap-3">
 
-              <div className="d-flex align-items gap-2" style={{ flex: "0 0 70px", minWidth: "300px" }}>
-                <input
-                  type="text"
-                  className="form-control form-control-sm"
-                  placeholder="Recherche : Catégorie, libellé, quantité, unité..."
-                  value={searchTerm}
-                  onChange={(e) => { setSearchTerm(e.target.value); setCurrentPage(1) }}
-                />
-              </div>
+              {/* Filtres dates + boutons — à gauche */}
+              <div className="d-flex align-items-center gap-2 flex-wrap">
 
-              <div className="d-flex align-items-center gap-2">
-                <label className="fw-bold text-black mb-0">Du :</label>
-                <input
-                  type="date"
-                  className="form-control form-control-sm"
-                  style={{ width: "150px" }}
-                  value={dateDebut}
-                  onChange={(e) => {
-                    const v = e.target.value
-                    setDateDebut(v)
-                    if (dateFin && v && dateFin < v) setDateFin(v)
-                    setCurrentPage(1)
-                  }}
-                />
-              </div>
+                <div className="d-flex align-items-center gap-1">
+                  <label className="fw-bold text-black mb-0">Du :</label>
+                  <input
+                    type="date"
+                    className="form-control form-control-sm"
+                    style={{ width: "150px" }}
+                    value={dateDebut}
+                    onChange={(e) => {
+                      const v = e.target.value
+                      setDateDebut(v)
+                      if (dateFin && v && dateFin < v) setDateFin(v)
+                    }}
+                  />
+                </div>
 
-              <div className="d-flex align-items-center gap-2">
-                <label className="fw-bold text-black mb-0">Au :</label>
-                <input
-                  type="date"
-                  className="form-control form-control-sm"
-                  style={{ width: "150px" }}
-                  value={dateFin}
-                  min={dateDebut || undefined}
-                  disabled={!dateDebut}
-                  onChange={(e) => {
-                    const v = e.target.value
-                    if (dateDebut && v < dateDebut) { setDateFin(dateDebut); return }
-                    setDateFin(v)
-                    setCurrentPage(1)
-                  }}
-                />
+                <div className="d-flex align-items-center gap-1">
+                  <label className="fw-bold text-black mb-0">Au :</label>
+                  <input
+                    type="date"
+                    className="form-control form-control-sm"
+                    style={{ width: "150px" }}
+                    value={dateFin}
+                    min={dateDebut || undefined}
+                    disabled={!dateDebut}
+                    onChange={(e) => {
+                      const v = e.target.value
+                      if (dateDebut && v < dateDebut) { setDateFin(dateDebut); return }
+                      setDateFin(v)
+                    }}
+                  />
+                </div>
 
                 <button className="btn btn-outline-success btn-sm" onClick={() => {
-                  const today = getTodayStr()
-                  setDateDebut(today); setDateFin(today); setCurrentPage(1)
+                  const today = getTodayStr(); setDateDebut(today); setDateFin(today)
                 }}>📅 Aujourd'hui</button>
 
                 <button className="btn btn-outline-success btn-sm" onClick={() => {
-                  setDateDebut(""); setDateFin(""); setCurrentPage(1)
+                  setDateDebut(""); setDateFin("")
                 }}>📆 Toutes dates</button>
 
                 <button
                   className={`btn btn-sm ${showAll ? "btn-primary" : "btn-outline-primary"}`}
-                  onClick={() => { setShowAll((prev) => !prev); setCurrentPage(1) }}
+                  onClick={() => setShowAll((prev) => !prev)}
                 >
                   {showAll
                     ? `📖 Toutes (${notifications.length})`
                     : `📕 Non lues${unreadCount > 0 ? ` (${unreadCount})` : ""}`
                   }
-                </button>
-              </div>
-
-              {/* Actions */}
-              <div className="d-flex gap-2 align-items-center flex-wrap">
-                <button
-                  className={`btn btn-sm ${clicked ? "btn-danger" : "btn-outline-danger"}`}
-                  onClick={() => { setClicked(true); setShowModal(true) }}
-                >
-                  Effacer tous
                 </button>
 
                 <span className="text-muted small">
@@ -408,89 +435,57 @@ export default function NotificationsPage() {
                     : "Toutes les dates affichées"}
                 </span>
               </div>
+
+              {/* Bouton Effacer tous — à droite sur la même ligne */}
+              <div className="d-flex align-items-center">
+                <button
+                  className={`btn btn-sm ${clicked ? "btn-danger" : "btn-outline-danger"}`}
+                  onClick={() => { setClicked(true); setShowModal(true) }}
+                >
+                  Effacer tous
+                </button>
+              </div>
+
             </div>
           </div>
         </div>
 
-        {/* ✅ MODAL CONFIRMATION SUPPRESSION — style rouge */}
+        {/* ── MODAL CONFIRMATION SUPPRESSION — INCHANGÉ ── */}
         {showModal && (
           <div className="modal fade show d-block" tabIndex="-1" style={{ backgroundColor: "rgba(0,0,0,0.5)" }}>
             <div className="modal-dialog modal-dialog-centered">
               <div className="modal-content border-0 shadow-lg" style={{ borderRadius: "16px", overflow: "hidden" }}>
-
-                {/* Header rouge */}
                 <div className="modal-header border-0" style={{ background: "linear-gradient(135deg, #d63031, #e17055)", padding: "20px 24px" }}>
                   <div className="d-flex align-items-center gap-2">
                     <span style={{ fontSize: "24px" }}>🗑️</span>
-                    <h5 className="modal-title text-white fw-bold mb-0">
-                      Effacer toutes les notifications
-                    </h5>
+                    <h5 className="modal-title text-white fw-bold mb-0">Effacer toutes les notifications</h5>
                   </div>
-                  <button
-                    type="button"
-                    className="btn-close btn-close-white"
-                    onClick={() => { setShowModal(false); setClicked(false) }}
-                  ></button>
+                  <button type="button" className="btn-close btn-close-white" onClick={() => { setShowModal(false); setClicked(false) }}></button>
                 </div>
-
-                {/* Body */}
                 <div className="modal-body" style={{ padding: "28px 24px 20px" }}>
                   <div className="text-center mb-3">
-                    <div style={{
-                      width: "64px", height: "64px",
-                      borderRadius: "50%",
-                      background: "rgba(214,48,49,0.1)",
-                      display: "flex", alignItems: "center", justifyContent: "center",
-                      margin: "0 auto", fontSize: "32px"
-                    }}>
-                      ⚠️
-                    </div>
+                    <div style={{ width: "64px", height: "64px", borderRadius: "50%", background: "rgba(214,48,49,0.1)", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto", fontSize: "32px" }}>⚠️</div>
                   </div>
-
                   <p className="text-center fw-bold mb-2" style={{ fontSize: "16px", color: "#d63031" }}>
                     Voulez-vous sauvegarder puis supprimer toutes les notifications ?
                   </p>
-
-                  <p className="text-center mb-0" style={{
-                    fontSize: "13px", color: "#c0392b",
-                    background: "rgba(214,48,49,0.08)",
-                    borderRadius: "8px", padding: "10px 16px",
-                    border: "1px solid rgba(214,48,49,0.2)"
-                  }}>
+                  <p className="text-center mb-0" style={{ fontSize: "13px", color: "#c0392b", background: "rgba(214,48,49,0.08)", borderRadius: "8px", padding: "10px 16px", border: "1px solid rgba(214,48,49,0.2)" }}>
                     🚫 <strong>Cette action est irréversible.</strong><br />
                     Toutes les notifications seront définitivement supprimées.
                   </p>
                 </div>
-
-                {/* Footer */}
                 <div className="modal-footer border-0" style={{ padding: "0 24px 24px", gap: "10px" }}>
-                  <button
-                    className="btn btn-outline-secondary"
-                    onClick={() => { setShowModal(false); setClicked(false) }}
-                    style={{ borderRadius: "10px", padding: "8px 20px", flex: 1 }}
-                  >
-                    Annuler
-                  </button>
-                  <button
-                    className="btn btn-danger"
-                    onClick={handleBackupDelete}
-                    disabled={loading}
-                    style={{
-                      borderRadius: "10px", padding: "8px 20px", flex: 1,
-                      background: "linear-gradient(135deg, #d63031, #c0392b)",
-                      border: "none", fontWeight: "600"
-                    }}
-                  >
+                  <button className="btn btn-outline-secondary" onClick={() => { setShowModal(false); setClicked(false) }} style={{ borderRadius: "10px", padding: "8px 20px", flex: 1 }}>Annuler</button>
+                  <button className="btn btn-danger" onClick={handleBackupDelete} disabled={loading} style={{ borderRadius: "10px", padding: "8px 20px", flex: 1, background: "linear-gradient(135deg, #d63031, #c0392b)", border: "none", fontWeight: "600" }}>
                     {loading ? "Traitement..." : "🗑️ Confirmer"}
                   </button>
                 </div>
-
               </div>
             </div>
           </div>
         )}
 
-        {/* ── LÉGENDE ── */}
+        {/* ── LÉGENDE — INCHANGÉE ── */}
         <div className="d-flex gap-4 mb-2 ps-1 align-items-center">
           <span className="small text-muted d-flex align-items-center gap-2">
             <span style={{ display: "inline-block", width: 14, height: 14, backgroundColor: "#fff3cd", border: "1px solid #ffc107", borderRadius: 3 }}></span>
@@ -507,9 +502,21 @@ export default function NotificationsPage() {
           )}
         </div>
 
-        {/* ── TABLEAU ── */}
+        {/* ── BARRE DE RECHERCHE au-dessus du tableau, à droite ── */}
+        <div className="d-flex justify-content-end mb-2">
+          <input
+            type="text"
+            className="form-control form-control-sm"
+            placeholder="Recherche : Catégorie, libellé, quantité, unité..."
+            style={{ width: "320px" }}
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+          />
+        </div>
+
+        {/* ── TABLEAU — tbody VIDE, DataTables injecte les lignes ── */}
         <div className="table-responsive p-0 m-0 w-100">
-          <table className="table table-hover table-bordered bg-white m-0 w-100">
+          <table ref={tableRef} className="table table-hover table-bordered bg-white m-0 w-100">
             <thead className="table-light">
               <tr>
                 <th>#</th>
@@ -530,78 +537,11 @@ export default function NotificationsPage() {
                 ))}
               </tr>
             </thead>
-            <tbody>
-              {paginatedData.length === 0 ? (
-                <tr>
-                  <td colSpan="9" className="text-center text-muted py-4">
-                    {notifications.length === 0
-                      ? "Aucune notification disponible"
-                      : !showAll
-                        ? `Aucune notification non lue pour la période ${formatDateFR(dateDebut)} - ${formatDateFR(dateFin)}`
-                        : `Aucune notification pour la période ${formatDateFR(dateDebut)} - ${formatDateFR(dateFin)}`
-                    }
-                  </td>
-                </tr>
-              ) : (
-                paginatedData.map((n, index) => {
-                  const isRead = n.lu === true
-                  return (
-                    <tr
-                      key={n.id ?? index}
-                      className={`notif-row ${isRead ? "is-read" : "is-unread"}`}
-                      onClick={() => handleRowClick(n)}
-                      title={isRead ? "Notification déjà lue" : "Cliquez pour marquer comme lue"}
-                    >
-                      <td>{(currentPage - 1) * itemsPerPage + index + 1}</td>
-                      <td>{n.categorie || "-"}</td>
-                      <td className="fw-bold">{n.libelle || "-"}</td>
-                      <td>
-                        <span className={
-                          n.produit > 0 ? "text-success fw-bold"
-                          : n.produit < 0 ? "text-danger fw-bold"
-                          : ""
-                        }>
-                          {n.produit > 0 ? "+" : ""}{n.produit || "0"}
-                        </span>
-                      </td>
-                      <td>{n.unite || "-"}</td>
-                      <td>{n.prix ? `${parseFloat(n.prix).toLocaleString("fr-FR")} Ar` : "-"}</td>
-                      <td>{formatDateFR(n.date_ajout)}</td>
-                      <td>{formatTime(n.heure_ajout)}</td>
-                      <td style={{ whiteSpace: "nowrap" }}>
-                        <span
-                          className={`badge ${isRead ? "bg-success" : "bg-warning text-dark"}`}
-                          style={{ padding: "6px 12px", fontSize: "12px", fontWeight: 600, minWidth: 80, textAlign: "center", display: "inline-block" }}
-                        >
-                          {isRead ? "✓ Lue" : "● Non lue"}
-                        </span>
-                      </td>
-                    </tr>
-                  )
-                })
-              )}
-            </tbody>
+            {/* ✅ tbody vide — DataTables injecte les lignes, évite le conflit DOM React */}
+            <tbody></tbody>
           </table>
         </div>
-
-        {/* ── PAGINATION ── */}
-        {totalPages > 1 && (
-          <div className="d-flex justify-content-between align-items-center mt-2">
-            <button
-              className="btn btn-outline-secondary btn-sm"
-              disabled={currentPage === 1}
-              onClick={() => setCurrentPage((p) => Math.max(p - 1, 1))}
-            >◀️ Précédent</button>
-            <span className="text-muted small">
-              Page {currentPage} / {totalPages} — {sortedData.length} notification{sortedData.length > 1 ? "s" : ""}
-            </span>
-            <button
-              className="btn btn-outline-secondary btn-sm"
-              disabled={currentPage === totalPages}
-              onClick={() => setCurrentPage((p) => Math.min(p + 1, totalPages))}
-            >Suivant ▶️</button>
-          </div>
-        )}
+        {/* ── Pagination gérée automatiquement par DataTables ── */}
 
         <CreerCompte
           showUserModal={showUserModal}

@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import { useNavigate } from "react-router-dom"
 import { useAuth } from "../contexts/AuthContext"
 import api from "../services/api"
@@ -23,13 +23,14 @@ const ClientDashboard = () => {
   const [produitValue, setProduitValue] = useState("")
   const [searchTerm, setSearchTerm] = useState("")
   const [sortConfig, setSortConfig] = useState({ key: null, direction: "asc" })
-  const [currentPage, setCurrentPage] = useState(1)
-  const itemsPerPage = 10
   const [showPerteModal, setShowPerteModal] = useState(false)
   const [showProfilModal, setShowProfilModal] = useState(false)
 
+  // ─── DataTables refs ──────────────────────────────────────────────────────
+  const tableRef = useRef(null)
+  const dtRef = useRef(null)
+
   useEffect(() => {
-    // Sécurité : si user n'est pas défini, rediriger
     if (!user) {
       navigate("/login")
       return
@@ -40,14 +41,11 @@ const ClientDashboard = () => {
       categorie: user.categorie
     })
     fetchArticles()
-  }, [user])
+  }, [user]) // eslint-disable-line
 
   const fetchArticles = async () => {
-    // Toujours s'assurer que loading est mis à false peu importe ce qui arrive
     try {
       let response
-
-      // ✅ FIX : admin charge tout, les autres filtrent par catégorie
       if (user.categorie === "admin") {
         console.log("Appel API /articles pour admin")
         response = await api.get("/articles")
@@ -56,7 +54,6 @@ const ClientDashboard = () => {
         response = await api.get(`/articles?categorie=${user.categorie}`)
       }
 
-      // ✅ FIX : normalisation robuste de la réponse API
       const data = response?.data?.data || response?.data || []
       const articlesArray = Array.isArray(data) ? data : []
 
@@ -65,24 +62,21 @@ const ClientDashboard = () => {
         sample: articlesArray[0] || null
       })
       setArticles(articlesArray)
-      setError("") // reset erreur si succès
+      setError("")
     } catch (err) {
       console.error("Erreur fetchArticles:", err)
-      // ✅ FIX : message d'erreur précis selon le statut HTTP
       if (err.response?.status === 401) {
         setError("Session expirée. Veuillez vous reconnecter.")
         setTimeout(() => navigate("/login"), 2000)
       } else if (err.response?.status === 403) {
         setError("Accès refusé pour cette catégorie.")
       } else if (err.response?.status === 404) {
-        // ✅ FIX CRITIQUE : 404 ne veut pas dire erreur fatale, juste 0 articles
         setArticles([])
         setError("")
       } else {
         setError("Erreur lors du chargement des articles. Veuillez réessayer.")
       }
     } finally {
-      // ✅ FIX CRITIQUE : setLoading(false) TOUJOURS appelé dans finally
       setLoading(false)
     }
   }
@@ -97,22 +91,12 @@ const ClientDashboard = () => {
     setShowModal(true)
   }
 
-  // ✅ FIX CRITIQUE : logique canAddToCategory améliorée
-  // Avant : parts[1] === userCategorie  →  échoue si format inattendu
-  // Après : vérification plus souple et logs pour debug
   const canAddToCategory = (articleCategorie, userCategorie) => {
     if (!articleCategorie || !userCategorie) return false
     if (userCategorie === "admin") return true
-
-    // Exemples de formats possibles : "boisson/resto", "salle/resto", "resto"
     const categorieNormalisee = articleCategorie.toLowerCase().trim()
     const userCatNormalisee = userCategorie.toLowerCase().trim()
-
-    // Vérifie si la catégorie de l'article contient la catégorie de l'utilisateur
-    // Gère : "boisson/resto", "salle/resto", "resto", etc.
     const parts = categorieNormalisee.split("/")
-
-    // ✅ Cherche dans toutes les parties, pas seulement parts[1]
     return parts.some(part => part === userCatNormalisee) || categorieNormalisee === userCatNormalisee
   }
 
@@ -200,16 +184,48 @@ const ClientDashboard = () => {
     )
   })
 
-
+  // ─── authorizedArticles déclaré AVANT le useEffect DataTables ─────────────
   const authorizedArticles = user?.categorie === "admin"
     ? filteredArticles.filter((article) => canAddToCategory(article.categorie, user.categorie))
-    : filteredArticles // L'API a déjà filtré par catégorie
+    : filteredArticles
 
-  const totalPages = Math.ceil(authorizedArticles.length / itemsPerPage)
-  const startIndex = (currentPage - 1) * itemsPerPage
-  const paginatedArticles = authorizedArticles.slice(startIndex, startIndex + itemsPerPage)
+  // ─── DataTables : init APRÈS authorizedArticles ───────────────────────────
+  useEffect(() => {
+    if (!tableRef.current || !window.$) return
 
-  const goToPage = (page) => page >= 1 && page <= totalPages && setCurrentPage(page)
+    if (dtRef.current) {
+      dtRef.current.destroy()
+      dtRef.current = null
+    }
+
+    dtRef.current = window.$(tableRef.current).DataTable({
+      order: [],
+      pageLength: 10,
+      lengthMenu: [5, 10, 25, 50, 100],
+      retrieve: true,
+      language: {
+        search: "🔍 Rechercher :",
+        lengthMenu: "Afficher _MENU_ lignes",
+        info: "Affichage de _START_ à _END_ sur _TOTAL_ entrées",
+        paginate: {
+          first: "Premier",
+          last: "Dernier",
+          next: "Suivant ➡",
+          previous: "⬅ Précédent",
+        },
+        zeroRecords: "Aucun résultat trouvé",
+      },
+      // Désactiver le tri sur la colonne Action (dernière colonne)
+      columnDefs: [{ orderable: false, targets: -1 }],
+    })
+
+    return () => {
+      if (dtRef.current) {
+        dtRef.current.destroy()
+        dtRef.current = null
+      }
+    }
+  }, [authorizedArticles]) // eslint-disable-line
 
   const SortArrow = ({ column }) => {
     if (sortConfig.key !== column) return <span className="ms-1 text-muted">▲▼</span>
@@ -220,7 +236,6 @@ const ClientDashboard = () => {
     )
   }
 
-  // ✅ FIX : écran de chargement avec timeout de sécurité (évite le blocage infini)
   if (loading) {
     return (
       <div className="d-flex flex-column justify-content-center align-items-center" style={{ height: "100vh" }}>
@@ -347,7 +362,6 @@ const ClientDashboard = () => {
                     ? "Vous pouvez ajouter des quantités à toutes les catégories"
                     : `Vous pouvez ajouter des quantités uniquement dans la catégorie "${user?.categorie}"`}
                 </p>
-                {/* ✅ DEBUG INFO : affiche le nombre d'articles chargés */}
                 <small className="text-muted">
                   {authorizedArticles.length} article(s) chargé(s) pour la catégorie "{user?.categorie}"
                 </small>
@@ -357,54 +371,36 @@ const ClientDashboard = () => {
               <button className="btn btn-danger" onClick={() => setShowPerteModal(true)}>
                 ⚠️ Pertes
               </button>
-             
-              <div style={{ width: "250px" }}>
-                <input
-                  type="text"
-                  className="form-control"
-                  placeholder="Rechercher tous les articles..."
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                />
-              </div>
+
             </div>
           </div>
         </div>
       </div>
 
-      {/* Tableau */}
+      {/* ─── Tableau avec DataTables ────────────────────────────────────────── */}
       <div className="row">
         <div className="col-12">
           <div className="card shadow">
             <div className="card-body">
               <div className="table-responsive">
-                <table className="table table-hover">
+                <table
+                  ref={tableRef}
+                  className="table table-hover datatable"
+                >
                   <thead style={{ backgroundColor: "rgba(255,255,255,0.69)" }}>
                     <tr>
-                      <th onClick={() => handleSort("id")} style={{ cursor: "pointer" }}>
-                        ID <SortArrow column="id" />
-                      </th>
-                      <th onClick={() => handleSort("categorie")} style={{ cursor: "pointer" }}>
-                        Catégorie <SortArrow column="categorie" />
-                      </th>
-                      <th onClick={() => handleSort("libelle")} style={{ cursor: "pointer" }}>
-                        Libellé <SortArrow column="libelle" />
-                      </th>
-                      <th onClick={() => handleSort("produit")} style={{ cursor: "pointer" }}>
-                        Produit <SortArrow column="produit" />
-                      </th>
-                      <th onClick={() => handleSort("unite")} style={{ cursor: "pointer" }}>
-                        Unité <SortArrow column="unite" />
-                      </th>
-                      <th onClick={() => handleSort("date")} style={{ cursor: "pointer" }}>
-                        Date <SortArrow column="date" />
-                      </th>
+                      <th>ID</th>
+                      <th>Catégorie</th>
+                      <th>Libellé</th>
+                      <th>Produit</th>
+                      <th>Unité</th>
+                      <th>Date</th>
                       <th>Action</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {paginatedArticles.length > 0 ? (
-                      paginatedArticles.map((article) => (
+                    {authorizedArticles.length > 0 ? (
+                      authorizedArticles.map((article) => (
                         <tr key={article.pk}>
                           <td>{article.id}</td>
                           <td>
@@ -441,31 +437,7 @@ const ClientDashboard = () => {
                   </tbody>
                 </table>
               </div>
-
-              {/* Pagination */}
-              {totalPages > 1 && (
-                <nav>
-                  <ul className="pagination justify-content-center mt-3">
-                    <li className={`page-item ${currentPage === 1 ? "disabled" : ""}`}>
-                      <button className="page-link" onClick={() => goToPage(currentPage - 1)}>
-                        Précédent
-                      </button>
-                    </li>
-                    {Array.from({ length: totalPages }, (_, index) => (
-                      <li key={index} className={`page-item ${currentPage === index + 1 ? "active" : ""}`}>
-                        <button className="page-link" onClick={() => goToPage(index + 1)}>
-                          {index + 1}
-                        </button>
-                      </li>
-                    ))}
-                    <li className={`page-item ${currentPage === totalPages ? "disabled" : ""}`}>
-                      <button className="page-link" onClick={() => goToPage(currentPage + 1)}>
-                        Suivant
-                      </button>
-                    </li>
-                  </ul>
-                </nav>
-              )}
+              {/* ─── Pagination gérée automatiquement par DataTables ───────── */}
             </div>
           </div>
         </div>
