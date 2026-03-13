@@ -5,15 +5,7 @@ import { useAuth } from "../contexts/AuthContext"
 import { getUnreadNotifications, updateNotification } from "../services/notificationService"
 import echo from "../services/echo"
 
-/**
- * Hook personnalisé pour gérer les notifications en temps réel
- * 
- * Fonctionnalités :
- * - Charge les notifications non lues au démarrage
- * - Écoute les nouvelles notifications via WebSocket
- * - Met à jour le compteur automatiquement
- * - Récupère les notifications manquées lors de la reconnexion
- */
+
 export const useNotifications = () => {
   const { user } = useAuth()
   const [unreadCount, setUnreadCount] = useState(0)
@@ -134,9 +126,7 @@ export const useNotifications = () => {
     try {
       channel = echo.channel("notifications")
 
-      // Écouter les nouvelles notifications en temps réel
-      // IMPORTANT: on attache le listener même si la connexion WebSocket
-      // n'est pas encore "prête" au moment du montage (sinon ça marche après refresh seulement).
+      
       channel.listen(".notification.created", (notificationData) => {
         const payload = notificationData?.notification ?? notificationData
         console.log("📩 Nouvelle notification reçue en temps réel:", payload)

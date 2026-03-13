@@ -1,232 +1,284 @@
 "use client"
 
-import { useState, useEffect, useMemo } from "react"
+import { useState, useEffect, useMemo, useRef, useCallback } from "react"
 import * as XLSX from "xlsx"
 import api from "../services/api"
-import axios from "axios"
 import { useAuth } from "../contexts/AuthContext"
+
+// ─── Helpers (hors composant, pas de re-création) ───────────────────────────
+const getCatClass = (c = "") => {
+  const v = (c ?? "").toLowerCase()
+  if (v.includes("resto"))   return "cat-resto"
+  if (v.includes("snack"))   return "cat-snack"
+  if (v.includes("detente")) return "cat-detente"
+  return "cat-default"
+}
+
+const getRowClass = (categorie = "") => {
+  const v = (categorie ?? "").toLowerCase()
+  if (v.includes("resto"))   return "table-primary"
+  if (v.includes("snack"))   return "table-warning"
+  if (v.includes("detente")) return "table-info"
+  return "table-light"
+}
+
+const formatDate = (d) =>
+  !d ? "N/A" : new Date(d).toLocaleDateString("fr-FR", { day:"2-digit", month:"2-digit", year:"numeric" })
+
 
 const WeekView = ({ onBack, selectedCategory }) => {
   const { user } = useAuth()
-  const [weeks, setWeeks] = useState([])
-  const [filteredWeeks, setFilteredWeeks] = useState([])
+
+  const [weeks, setWeeks]               = useState([])
   const [selectedWeek, setSelectedWeek] = useState(null)
-  const [articles, setArticles] = useState([])
-  const [loading, setLoading] = useState(false)
-  const [searchTerm, setSearchTerm] = useState("")
-  const [searchWeek, setSearchWeek] = useState("")
-  const [error, setError] = useState("")
-  const [startDate, setStartDate] = useState("")
-  const [endDate, setEndDate] = useState("")
+  const [articles, setArticles]         = useState([])
+  const [loading, setLoading]           = useState(false)
+  const [searchTerm, setSearchTerm]     = useState("")
+  const [error, setError]               = useState("")
+  const [startDate, setStartDate]       = useState("")
+  const [endDate, setEndDate]           = useState("")
+  const [sortConfig, setSortConfig]     = useState({ key: null, direction: "asc" })
+  const [dropdownOpen, setDropdownOpen] = useState(false)
 
-  // --- PAGINATION ARTICLES ---
-  const [articlePage, setArticlePage] = useState(1)
-  const articlesPerPage = 10
+  
+  const articleWrapRef = useRef(null)  // <div> conteneur table articles
+  const articleDtRef   = useRef(null)  // instance DataTables articles
 
-  // --- PAGINATION SEMAINES ---
-  const [weekPage, setWeekPage] = useState(1)
-  const weeksPerPage = 6
-
-  //date
-  // Fonction de formatage des dates au format JJ/MM/AAAA
-  const formatDateDisplay = (dateString) => {
-    if (!dateString) return ""
-    const date = new Date(dateString)
-
-    // Format JJ/MM/AAAA
-    const day = String(date.getDate()).padStart(2, "0")
-    const month = String(date.getMonth() + 1).padStart(2, "0")
-    const year = date.getFullYear()
-
-    return `${day}/${month}/${year}`
-  }
-
-  // --- TRI DYNAMIQUE ---
-  const [sortConfig, setSortConfig] = useState({ key: null, direction: "asc" })
-
-  const handleSort = (key) => {
-    setSortConfig((prev) => {
-      if (prev.key === key) {
-        return { key, direction: prev.direction === "asc" ? "desc" : "asc" }
+  // ── Utilitaire : détruire + supprimer le <table> du conteneur ─────────────
+  const destroyDt = (dtRef, wrapRef) => {
+    if (dtRef.current) {
+      try { dtRef.current.destroy(true) } catch (_) {}  // true = remove la table du DOM
+      dtRef.current = null
+    }
+    // Sécurité : vider le conteneur au cas où
+    if (wrapRef?.current) {
+      while (wrapRef.current.firstChild) {
+        wrapRef.current.removeChild(wrapRef.current.firstChild)
       }
-      return { key, direction: "asc" }
-    })
-    setArticlePage(1)
+    }
   }
 
-  // --- Chargement des semaines ---
-  useEffect(() => {
-    fetchWeeks()
-  }, [])
+  // ── Créer un <table> vierge dans le conteneur et retourner l'élément ──────
+  const createTable = (wrapRef, theadHTML) => {
+    if (!wrapRef.current) return null
+    // Vider le conteneur d'abord
+    while (wrapRef.current.firstChild) {
+      wrapRef.current.removeChild(wrapRef.current.firstChild)
+    }
+    const table = document.createElement("table")
+    table.className = "wv-t"
+    table.innerHTML = `<thead>${theadHTML}</thead><tbody></tbody>`
+    wrapRef.current.appendChild(table)
+    return table
+  }
+
+
+  useEffect(() => { fetchWeeks() }, [])  // eslint-disable-line
 
   const fetchWeeks = async () => {
     setLoading(true)
     try {
-      const res = await api.get("/articleweeks")
-      // S'assurer que data est toujours un tableau
-      const responseData = res.data?.data || res.data || []
-      const data = Array.isArray(responseData) ? responseData : []
-      setWeeks(data)
-      setFilteredWeeks(data)
-    } catch (err) {
-      console.error(err)
+      const res  = await api.get("/articleweeks")
+      const raw  = res.data?.data || res.data || []
+      setWeeks(Array.isArray(raw) ? raw : [])
+    } catch {
       setError("Erreur lors du chargement des semaines")
       setWeeks([])
-      setFilteredWeeks([])
-    } finally {
-      setLoading(false)
-    }
+    } finally { setLoading(false) }
   }
 
-  const fetchWeekArticles = async (semaine, annee) => {
+  const fetchWeekArticles = useCallback(async (semaine, annee) => {
     setLoading(true)
     try {
       const res = await api.get(`/articleweeks/week/${semaine}/${annee}`)
-      // S'assurer que la réponse est toujours un tableau
-      const responseData = res.data?.data || res.data || []
-      const data = Array.isArray(responseData) ? responseData : []
-      setArticles(data)
+      const raw = res.data?.data || res.data || []
+      setArticles(Array.isArray(raw) ? raw : [])
       setSelectedWeek({ semaine, annee })
-      setArticlePage(1)
-      setSearchTerm("")
-      setSortConfig({ key: null, direction: "asc" })
-    } catch (err) {
-      console.error(err)
+      setSearchTerm(""); setSortConfig({ key: null, direction: "asc" })
+      setStartDate(""); setEndDate("")
+    } catch {
       setError("Erreur lors du chargement des articles")
-      setArticles([]) // S'assurer que articles est un tableau vide en cas d'erreur
-    } finally {
-      setLoading(false)
-    }
-  }
+      setArticles([])
+    } finally { setLoading(false) }
+  }, [])
 
+
+  useEffect(() => {
+    if (!dropdownOpen) return
+    const close = (e) => {
+      if (!e.target.closest(".wv-dd")) setDropdownOpen(false)
+    }
+    document.addEventListener("mousedown", close)
+    return () => document.removeEventListener("mousedown", close)
+  }, [dropdownOpen])
+
+ 
+  const [searchWeek, setSearchWeek]     = useState("")
+  const [weekPage, setWeekPage]         = useState(1)
+  const [weeksPerPage, setWeeksPerPage] = useState(6)
+  const weekPageOptions = [3, 6, 9, 12]
+
+  const filteredWeeks = useMemo(() => {
+    if (!searchWeek.trim()) return weeks
+    return weeks.filter((w) => w?.semaine?.toString() === searchWeek.trim())
+  }, [weeks, searchWeek])
+
+  useEffect(() => { setWeekPage(1) }, [searchWeek, weeksPerPage])
+
+  const totalWeekPages = Math.ceil(filteredWeeks.length / weeksPerPage)
+  const currentWeeks   = filteredWeeks.slice((weekPage - 1) * weeksPerPage, weekPage * weeksPerPage)
+
+
+  useEffect(() => {
+    if (!selectedWeek) destroyDt(articleDtRef, articleWrapRef)
+  }, [selectedWeek])
+
+ 
   const filteredArticles = useMemo(() => {
-    // S'assurer que articles est toujours un tableau
-    if (!Array.isArray(articles)) {
-      return []
-    }
-
-    let result = [...articles]
-
-    // Filtrer par recherche
+    if (!Array.isArray(articles)) return []
+    let r = [...articles]
     if (searchTerm?.trim()) {
-      const lower = searchTerm.toLowerCase()
-      result = result.filter((a) => {
-        return (
-          a.article_id?.toString().toLowerCase().includes(lower) ||
-          a.libelle?.toString().toLowerCase().includes(lower) ||
-          a.categorie?.toString().toLowerCase().includes(lower) ||
-          a.produit?.toString().toLowerCase().includes(lower)
-        )
-      })
+      const l = searchTerm.toLowerCase()
+      r = r.filter((a) =>
+        a.article_id?.toString().toLowerCase().includes(l) ||
+        a.libelle?.toString().toLowerCase().includes(l) ||
+        a.categorie?.toString().toLowerCase().includes(l) ||
+        a.produit?.toString().toLowerCase().includes(l)
+      )
     }
-
-    // Filtrer par catégorie sélectionnée dans le header
-    if (selectedCategory) {
-      result = result.filter((a) => {
-        return a.categorie?.toLowerCase().includes(selectedCategory.toLowerCase())
-      })
-    }
-
+    if (selectedCategory)
+      r = r.filter((a) => a.categorie?.toLowerCase().includes(selectedCategory.toLowerCase()))
     if (startDate || endDate) {
-      result = result.filter((a) => {
+      r = r.filter((a) => {
         if (!a.date) return false
-
-        const articleDate = new Date(a.date)
-        articleDate.setHours(0, 0, 0, 0)
-
-        if (startDate) {
-          const start = new Date(startDate)
-          start.setHours(0, 0, 0, 0)
-          if (articleDate < start) return false
-        }
-
-        if (endDate) {
-          const end = new Date(endDate)
-          end.setHours(23, 59, 59, 999)
-          if (articleDate > end) return false
-        }
-
+        const d = new Date(a.date); d.setHours(0,0,0,0)
+        if (startDate) { const s = new Date(startDate); s.setHours(0,0,0,0); if (d < s) return false }
+        if (endDate)   { const e = new Date(endDate);   e.setHours(23,59,59,999); if (d > e) return false }
         return true
       })
     }
-
-    return result
+    return r
   }, [articles, searchTerm, selectedCategory, startDate, endDate])
 
-  // --- Tri appliqué SUR L'ENSEMBLE filtré (important) ---
-  const sortedAllArticles = useMemo(() => {
-    // S'assurer que filteredArticles est toujours un tableau
-    if (!Array.isArray(filteredArticles)) {
-      return []
-    }
-
+  const sortedArticles = useMemo(() => {
     const arr = [...filteredArticles]
     if (!sortConfig.key) return arr
-
-    const key = sortConfig.key
     const dir = sortConfig.direction === "asc" ? 1 : -1
-
     arr.sort((a, b) => {
-      const rawA = a[key]
-      const rawB = b[key]
-
-      const numA = rawA === undefined || rawA === null ? Number.NaN : Number.parseFloat(rawA)
-      const numB = rawB === undefined || rawB === null ? Number.NaN : Number.parseFloat(rawB)
-
-      const bothNumbers = !Number.isNaN(numA) && !Number.isNaN(numB)
-
-      if (bothNumbers) {
-        if (numA < numB) return -1 * dir
-        if (numA > numB) return 1 * dir
-        return 0
-      }
-
-      const strA = (rawA ?? "").toString().toLowerCase()
-      const strB = (rawB ?? "").toString().toLowerCase()
-      return strA.localeCompare(strB, "fr", { numeric: true }) * dir
+      const rA = a[sortConfig.key], rB = b[sortConfig.key]
+      const nA = parseFloat(rA), nB = parseFloat(rB)
+      if (!isNaN(nA) && !isNaN(nB)) return (nA - nB) * dir
+      return (rA ?? "").toString().localeCompare((rB ?? "").toString(), "fr", { numeric: true }) * dir
     })
-
     return arr
   }, [filteredArticles, sortConfig])
 
   useEffect(() => {
-    if (!Array.isArray(weeks)) {
-      setFilteredWeeks([])
-      return
+    if (!selectedWeek || !articleWrapRef.current) return
+    const $ = window.$
+    if (!$) return
+
+    const rows = sortedArticles.map((a) => [
+      a.article_id ?? "",
+      `<span class="wv-badge ${getCatClass(a.categorie)}">${a.categorie ?? ""}</span>`,
+      a.libelle  ?? "",
+      a.produit  ?? "",
+      a.date ? formatDate(a.date) : "N/A",
+      a.semaine  ?? "",
+      a.annee    ?? "",
+    ])
+
+    destroyDt(articleDtRef, articleWrapRef)
+
+    const table = createTable(articleWrapRef, `
+      <tr>
+        <th class="sortable" data-key="article_id">ID</th>
+        <th class="sortable" data-key="categorie">Catégorie</th>
+        <th class="sortable" data-key="libelle">Libellé</th>
+        <th class="sortable" data-key="produit">Produit</th>
+        <th class="sortable" data-key="date">Date</th>
+        <th>Semaine</th>
+        <th>Année</th>
+      </tr>
+    `)
+    if (!table) return
+
+    // Indicateurs de tri dans les <th>
+    const updateThIndicators = (key, dir) => {
+      table.querySelectorAll("thead th[data-key]").forEach((th) => {
+        const k = th.getAttribute("data-key")
+        if (k === "article_id") th.textContent = "ID"
+        else if (k === "categorie")  th.textContent = "Catégorie"
+        else if (k === "libelle")    th.textContent = "Libellé"
+        else if (k === "produit")    th.textContent = "Produit"
+        else if (k === "date")       th.textContent = "Date"
+        if (k === key) th.textContent += ` ${dir === "asc" ? "▲" : "▼"}`
+      })
     }
-    if (searchWeek === "") {
-      setFilteredWeeks(weeks)
-    } else {
-      setFilteredWeeks(weeks.filter((w) => w && w.semaine && w.semaine.toString() === searchWeek.trim()))
-    }
-    setWeekPage(1)
-  }, [searchWeek, weeks])
 
-  const totalWeekPages = Math.ceil((Array.isArray(filteredWeeks) ? filteredWeeks.length : 0) / weeksPerPage)
-  const currentWeeks = Array.isArray(filteredWeeks) ? filteredWeeks.slice((weekPage - 1) * weeksPerPage, weekPage * weeksPerPage) : []
+    // Clic sur th pour trier
+    table.querySelectorAll("thead th[data-key]").forEach((th) => {
+      th.addEventListener("click", () => {
+        const key = th.getAttribute("data-key")
+        setSortConfig((prev) => ({
+          key,
+          direction: prev.key === key && prev.direction === "asc" ? "desc" : "asc",
+        }))
+      })
+    })
 
-  const totalArticlePages = Math.ceil(sortedAllArticles.length / articlesPerPage)
-  const currentArticles = sortedAllArticles.slice((articlePage - 1) * articlesPerPage, articlePage * articlesPerPage)
+    if (sortConfig.key) updateThIndicators(sortConfig.key, sortConfig.direction)
 
-  // --- Export Excel (côté client, données déjà chargées) ---
+    // setTimeout : garantit que le <table> est dans le DOM avant DataTables
+    const timer = setTimeout(() => {
+      if (!articleWrapRef.current || !table.parentNode) return
+      articleDtRef.current = $(table).DataTable({
+        data: rows,
+        order: [],
+        pageLength: 10,
+        lengthMenu: [5, 10, 25, 50, 100],
+        searching: false,
+        ordering: false,
+        language: {
+          lengthMenu:  "Afficher _MENU_ lignes",
+          info:        "Affichage de _START_ à _END_ sur _TOTAL_ entrées",
+          zeroRecords: "Aucun article trouvé.",
+          paginate: { first:"Premier", last:"Dernier", next:"Suivant ➡", previous:"⬅ Précédent" },
+        },
+        columnDefs: [{ orderable: false, targets: "_all" }],
+        createdRow: (row, data, dataIndex) => {
+          const article = sortedArticles[dataIndex]
+          if (article) {
+            row.classList.add(getRowClass(article.categorie))
+          }
+        },
+      })
+    }, 0)
+
+    return () => { clearTimeout(timer); destroyDt(articleDtRef, articleWrapRef) }
+  }, [sortedArticles, selectedWeek])  // eslint-disable-line
+
+  
   const handleExportExcel = (categorie) => {
     if (!selectedWeek) return
 
     const catNorm = (c) => (c || "").toLowerCase().replace(/\s*\/\s*/g, "/")
-    let toExport = sortedAllArticles
+
+    // Partir du tableau brut complet, pas du tableau filtré/trié affiché
+    let toExport = Array.isArray(articles) ? [...articles] : []
     if (categorie) {
       const normCat = catNorm(categorie)
       toExport = toExport.filter((a) => catNorm(a.categorie) === normCat)
     }
 
     const wsData = toExport.map((a) => ({
-      ID: a.article_id,
+      ID:        a.article_id,
       Catégorie: a.categorie,
-      Libellé: a.libelle,
-      Produit: a.produit,
-      Date: a.date ? formatDate(a.date) : "N/A",
-      Semaine: a.semaine,
-      Année: a.annee,
+      Libellé:   a.libelle,
+      Produit:   a.produit,
+      Date:      a.date ? formatDate(a.date) : "N/A",
+      Semaine:   a.semaine,
+      Année:     a.annee,
     }))
 
     const ws = XLSX.utils.json_to_sheet(wsData)
@@ -242,415 +294,351 @@ const WeekView = ({ onBack, selectedCategory }) => {
   }
 
   
-
-  const getCategoryBadgeClass = (categorie = "") => {
-    const c = (categorie ?? "").toLowerCase()
-    if (c.includes("resto")) return "bg-primary"
-    if (c.includes("snack")) return "bg-warning text-dark"
-    if (c.includes("detente")) return "bg-info text-dark"
-    return "bg-secondary"
-  }
-
-  const formatDate = (dateString) => {
-    if (!dateString) return "N/A"
-    const date = new Date(dateString)
-    return date.toLocaleDateString("fr-FR", {
-      day: "2-digit",
-      month: "2-digit",
-      year: "numeric",
-    })
-  }
-
   if (loading && weeks.length === 0)
     return (
-      <div className="d-flex justify-content-center align-items-center" style={{ minHeight: 300 }}>
-        <div className="spinner-border text-primary" role="status">
-          <span className="visually-hidden">Chargement...</span>
-        </div>
+      <div style={{ display:"flex", justifyContent:"center", alignItems:"center", minHeight:300 }}>
+        <div className="wv-spin" />
       </div>
     )
 
+
   return (
-    <div>
-      {error && (
-        <div className="alert alert-danger alert-dismissible fade show" role="alert">
-          {error}
-          <button type="button" className="btn-close" onClick={() => setError("")}></button>
-        </div>
-      )}
+    <>
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap');
+        :root{
+          --c-border:#e2e8f0;
+          --c-primary:#2563eb; --c-primary-h:#1d4ed8;
+          --c-accent:#0ea5e9;  --c-accent-h:#0284c7;
+          --radius:10px;
+        }
+        *{box-sizing:border-box;margin:0;padding:0;}
+        .wv-root{font-family:'Plus Jakarta Sans',sans-serif;padding:20px 16px 24px;}
 
-      <div className="container mt-3 pt-5">
-        <div className="row mb-3">
-          <div className="col-12 d-flex justify-content-between align-items-center flex-wrap">
-            
+        .wv-spin{width:36px;height:36px;border:3px solid var(--c-border);border-top-color:var(--c-primary);border-radius:50%;animation:spin .7s linear infinite;}
+        .wv-spin-sm{display:inline-block;width:16px;height:16px;border:2px solid var(--c-border);border-top-color:var(--c-primary);border-radius:50%;animation:spin .7s linear infinite;vertical-align:middle;margin-right:6px;}
+        @keyframes spin{to{transform:rotate(360deg);}}
+
+        .wv-alert{display:flex;justify-content:space-between;align-items:center;border:1px solid #fecaca;padding:12px 16px;margin-bottom:20px;color:#b91c1c;font-size:13.5px;}
+        .wv-alert button{background:none;border:none;cursor:pointer;color:#b91c1c;font-size:18px;}
+
+        /* ── semaines panel ── */
+        .wv-week-panel{border:1px solid var(--c-border);border-radius:var(--radius);padding:20px 16px;}
+        .wv-week-panel h4{font-size:20px;text-align:center;margin-bottom:16px;}
+
+        /* ── cards semaines ── */
+        .wv-week-search{display:flex;justify-content:flex-end;margin-bottom:10px;}
+        .wv-week-search-input{width:160px;padding:8px 14px;border:1px solid var(--c-border);border-radius:var(--radius);font-size:13.5px;font-family:inherit;text-align:center;outline:none;transition:border-color .2s;}
+        .wv-week-search-input:focus{border-color:var(--c-primary);}
+        .wv-empty{text-align:center;padding:32px 0;font-size:14px;}
+        .wv-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;}
+        @media(max-width:768px){.wv-grid{grid-template-columns:repeat(2,1fr);}}
+        @media(max-width:480px){.wv-grid{grid-template-columns:1fr;}}
+        .wv-tile{border:1.5px solid var(--c-border);border-radius:var(--radius);padding:14px 12px;text-align:center;cursor:pointer;transition:all .2s;}
+        .wv-tile:hover{border-color:var(--c-primary);}
+        .wv-tile h5{font-size:17px;font-weight:700;margin:0 0 4px;}
+        .wv-tile p{font-size:13px;margin:0 0 10px;}
+        .wv-cnt{display:inline-block;background:var(--c-primary);color:#fff;border:none;border-radius:20px;padding:3px 12px;font-size:12px;font-weight:600;}
+        /* ── barre longueur + info cards ── */
+        .wv-cards-bar{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;flex-wrap:wrap;gap:6px;}
+        .wv-cards-length{display:flex;align-items:center;gap:8px;font-size:13px;}
+        .wv-cards-info{font-size:13px;}
+        .wv-len-select{
+          padding:5px 28px 5px 10px;
+          border:1px solid var(--c-border);border-radius:7px;
+          font-size:13px;font-family:inherit;outline:none;
+          -webkit-appearance:none;appearance:none;
+          background:#fff url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath fill='none' stroke='%2364748b' stroke-width='1.5' d='M1 1l4 4 4-4'/%3E%3C/svg%3E") no-repeat right 8px center;
+          cursor:pointer;min-width:56px;
+        }
+        .wv-len-select:focus{border-color:var(--c-primary);}
+        /* pagination */
+        .wv-pages{display:flex;justify-content:center;align-items:center;gap:6px;margin-top:12px;}
+        .wv-pages button{border:1px solid var(--c-border);border-radius:8px;padding:6px 14px;font-size:13px;font-family:inherit;cursor:pointer;transition:all .15s;}
+        .wv-pages button:hover:not(:disabled){border-color:var(--c-primary);color:var(--c-primary);}
+        .wv-pages button:disabled{opacity:.4;cursor:not-allowed;}
+        .wv-pages span{font-size:13px;padding:0 6px;}
+
+        /* ── articles ── */
+        .wv-art-title{text-align:center;margin-bottom:22px;}
+        .wv-art-title h3{font-size:22px;font-weight:700;margin-bottom:4px;}
+        .wv-art-title .sub{font-size:15px;font-weight:400;}
+        .wv-chip{display:inline-flex;align-items:center;background:var(--c-primary);color:#fff;border:none;border-radius:20px;padding:2px 10px;font-size:12px;font-weight:500;margin-left:8px;}
+
+        /* toolbar */
+        .wv-toolbar{border:1px solid var(--c-border);border-radius:var(--radius);padding:12px 20px;margin-bottom:16px;display:flex;align-items:center;justify-content:flex-end;flex-wrap:wrap;gap:10px;}
+        .wv-sep{width:1px;height:28px;background:var(--c-border);flex-shrink:0;}
+        .wv-btn-back{display:flex;align-items:center;gap:6px;border:1.5px solid var(--c-border);border-radius:8px;padding:7px 14px;font-size:13px;font-family:inherit;cursor:pointer;transition:all .15s;white-space:nowrap;}
+        .wv-btn-back:hover{border-color:var(--c-primary);color:var(--c-primary);}
+        .wv-dg{display:flex;align-items:center;gap:7px;}
+        .wv-dg label{font-size:13px;font-weight:600;white-space:nowrap;}
+        .wv-di{padding:7px 10px;border:1px solid var(--c-border);border-radius:8px;font-size:13px;font-family:inherit;outline:none;transition:border-color .2s;width:140px;}
+        .wv-di:focus{border-color:var(--c-primary);}
+        .wv-di:disabled{opacity:.5;cursor:not-allowed;}
+        .wv-bi{border:1px solid var(--c-border);border-radius:7px;padding:6px 9px;cursor:pointer;transition:all .15s;font-size:13px;line-height:1;}
+        .wv-bi:hover{border-color:#dc2626;color:#dc2626;}
+
+        /* dropdown */
+        .wv-dd{position:relative;}
+        .wv-btn-exp{display:flex;align-items:center;gap:6px;background:var(--c-accent);border:none;border-radius:8px;padding:8px 16px;font-size:13px;font-family:inherit;color:#fff;cursor:pointer;font-weight:600;white-space:nowrap;transition:background .15s;}
+        .wv-btn-exp:hover{background:var(--c-accent-h);}
+        .wv-ddm{position:absolute;right:0;top:calc(100% + 6px);background:#fff;border:1px solid var(--c-border);border-radius:var(--radius);box-shadow:0 8px 24px rgba(0,0,0,.11);min-width:190px;z-index:999;display:none;}
+        .wv-dd.open .wv-ddm{display:block;}
+        .wv-ddh{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;padding:10px 14px 4px;}
+        .wv-ddd{height:1px;background:var(--c-border);margin:4px 0;}
+        .wv-ddi{display:block;width:100%;background:none;border:none;text-align:left;padding:8px 14px;font-size:13px;font-family:inherit;cursor:pointer;transition:background .12s;}
+        .wv-ddi:hover{background:var(--c-border);color:var(--c-primary);}
+
+        /* carte tableau - GARDÉ EN BLANC */
+        .wv-tcard{background:#fff;border:1px solid var(--c-border);border-radius:var(--radius);box-shadow:0 1px 10px rgba(15,23,42,.07);overflow:hidden;}
+        .wv-topbar{display:flex;align-items:center;justify-content:flex-end;padding:14px 20px 0;gap:8px;}
+        .wv-si{padding:7px 12px;border:1px solid var(--c-border);border-radius:8px;font-size:13px;font-family:inherit;outline:none;transition:border-color .2s;width:240px;}
+        .wv-si:focus{border-color:var(--c-primary);}
+
+        /*
+         * wv-dt-wrap : CONTENEUR que React ne modifie jamais.
+         * DataTables crée/détruit le <table> à l'intérieur en JS pur.
+         */
+        .wv-dt-wrap{padding:12px 20px 4px;overflow-x:auto;}
+
+        /* styles table injectée par DataTables */
+        .wv-t{width:100%;border-collapse:collapse;font-size:13.5px;background:#fff;}
+        .wv-t thead th{background:#fff;border-bottom:2px solid var(--c-border);padding:11px 14px;text-align:left;font-weight:600;font-size:11.5px;text-transform:uppercase;letter-spacing:.04em;white-space:nowrap;}
+        .wv-t thead th.sortable{cursor:pointer;user-select:none;}
+        .wv-t thead th.sortable:hover{color:var(--c-primary);}
+        .wv-t tbody tr{border-bottom:1px solid #f1f5f9;transition:background .12s;background:#fff;}
+        .wv-t tbody tr:last-child{border-bottom:none;}
+        .wv-t tbody tr:hover{background:#f8fafc;}
+        .wv-t td{padding:10px 14px;vertical-align:middle;}
+
+        /* badges */
+        .wv-badge{display:inline-block;border-radius:20px;padding:3px 10px;font-size:11.5px;font-weight:600;}
+        .cat-resto{border:1.5px solid;border-color:currentColor;}
+        .cat-snack{border:1.5px solid;border-color:currentColor;}
+        .cat-detente{border:1.5px solid;border-color:currentColor;}
+        .cat-default{border:1.5px solid;border-color:currentColor;}
+
+        /* DataTables UI */
+        .dataTables_wrapper{font-family:'Plus Jakarta Sans',sans-serif;}
+        .dataTables_wrapper .dataTables_filter label,
+        .dataTables_wrapper .dataTables_length label{font-size:13px;display:flex;align-items:center;gap:6px;}
+        .dataTables_wrapper .dataTables_filter input{padding:5px 10px;border:1px solid var(--c-border);border-radius:7px;font-size:13px;font-family:inherit;outline:none;}
+        .dataTables_wrapper .dataTables_filter input:focus{border-color:var(--c-primary);}
+        .dataTables_wrapper .dataTables_length select{
+          padding:5px 28px 5px 10px;
+          border:1px solid var(--c-border);border-radius:7px;
+          font-size:13px;font-family:inherit;outline:none;
+          -webkit-appearance:none;appearance:none;
+          background:#fff url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath fill='none' stroke='%2364748b' stroke-width='1.5' d='M1 1l4 4 4-4'/%3E%3C/svg%3E") no-repeat right 9px center;
+          cursor:pointer;min-width:64px;
+        }
+        .dataTables_wrapper .dataTables_length select:focus{border-color:var(--c-primary);outline:none;}
+        .dataTables_wrapper .dataTables_info{font-size:13px;padding:10px 0;}
+        .dataTables_wrapper .dataTables_paginate{padding:10px 0;}
+        .dataTables_wrapper .dataTables_paginate .paginate_button{display:inline-block;padding:5px 12px;margin:0 2px;border:1px solid var(--c-border) !important;border-radius:7px;font-size:13px;cursor:pointer;background:#fff !important;transition:all .15s;}
+        .dataTables_wrapper .dataTables_paginate .paginate_button:hover{border-color:var(--c-primary) !important;color:var(--c-primary) !important;background:#f8fafc !important;}
+        .dataTables_wrapper .dataTables_paginate .paginate_button.current{background:var(--c-primary) !important;color:#fff !important;border-color:var(--c-primary) !important;font-weight:600;}
+        .dataTables_wrapper .dataTables_paginate .paginate_button.disabled{opacity:.4 !important;cursor:not-allowed !important;}
+      `}</style>
+
+      <div className="wv-root">
+        {error && (
+          <div className="wv-alert">
+            <span>{error}</span>
+            <button onClick={() => setError("")}>×</button>
           </div>
-        </div>
-      </div>
+        )}
 
-      {!selectedWeek ? (
-        <div className="card shadow bg-transparent">
-          <div className="card-body">
-            <h4 className="mb-3 text-center text-black">Sélectionner une semaine</h4>
+        {!selectedWeek ? (
+          /* ══════════════════════════════════════
+             VUE SEMAINES — CARDS
+          ══════════════════════════════════════ */
+          <div className="wv-week-panel">
+            <h4>Sélectionner une semaine</h4>
 
-            <div className="mb-3 d-flex justify-content-end">
-              {/* CHAMP DE RECHERCHE SEMAINE (PREMIER) */}
+            {/* Barre de recherche par numéro */}
+            <div className="wv-week-search">
               <input
                 type="text"
-                className="form-control w-25 text-center"
-                placeholder="N° semaine..."
+                className="wv-week-search-input"
+                placeholder="N° semaine…"
                 value={searchWeek}
                 inputMode="numeric"
                 pattern="[0-9]*"
-                // INTERCEPTION TOTALE DES LETTRES
                 onInput={(e) => {
-                  const input = e.target
-                  const cleaned = input.value.replace(/[^0-9]/g, "")
-
-                  if (cleaned !== input.value) {
-                    input.value = cleaned
-                  }
-
-                  if (cleaned.length <= 2) {
-                    setSearchWeek(cleaned)
-                  }
+                  const c = e.target.value.replace(/[^0-9]/g, "")
+                  e.target.value = c
+                  if (c.length <= 2) setSearchWeek(c)
                 }}
                 onChange={(e) => {
-                  const value = e.target.value.replace(/[^0-9]/g, "")
-                  setSearchWeek(value.length <= 2 ? value : value.slice(0, 2))
+                  const v = e.target.value.replace(/[^0-9]/g, "")
+                  setSearchWeek(v.slice(0, 2))
                 }}
                 onKeyDown={(e) => {
-                  // TOUCHES AUTORISÉES SEULEMENT
-                  const allowedKeys = [
-                    "0",
-                    "1",
-                    "2",
-                    "3",
-                    "4",
-                    "5",
-                    "6",
-                    "7",
-                    "8",
-                    "9",
-                    "Backspace",
-                    "Delete",
-                    "ArrowLeft",
-                    "ArrowRight",
-                    "Tab",
-                    "Home",
-                    "End",
-                  ]
-
-                  // BLOQUE Ctrl+V (coller)
-                  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "v") {
-                    e.preventDefault()
-                    return
-                  }
-
-                  // BLOQUE toute touche non autorisée
-                  if (!allowedKeys.includes(e.key)) {
-                    e.preventDefault()
-                  }
+                  const ok = ["0","1","2","3","4","5","6","7","8","9","Backspace","Delete","ArrowLeft","ArrowRight","Tab","Home","End"]
+                  if ((e.ctrlKey || e.metaKey) && e.key === "v") { e.preventDefault(); return }
+                  if (!ok.includes(e.key)) e.preventDefault()
                 }}
                 onPaste={(e) => {
                   e.preventDefault()
-                  const pasteData = e.clipboardData.getData("text")
-                  const numbersOnly = pasteData.replace(/[^0-9]/g, "")
-                  if (numbersOnly.length <= 2) {
-                    setSearchWeek(numbersOnly)
-                  }
+                  const n = e.clipboardData.getData("text").replace(/[^0-9]/g, "")
+                  if (n.length <= 2) setSearchWeek(n)
                 }}
                 onDrop={(e) => e.preventDefault()}
-                autoComplete="off"
-                autoCorrect="off"
-                spellCheck="false"
+                autoComplete="off" spellCheck="false"
               />
             </div>
 
-            {filteredWeeks.length === 0 ? (
-              <p className="text-muted text-center">Aucune semaine trouvée.</p>
+            {loading ? (
+              <div style={{ display:"flex", justifyContent:"center", padding:"32px 0" }}>
+                <div className="wv-spin" />
+              </div>
+            ) : filteredWeeks.length === 0 ? (
+              <p className="wv-empty">Aucune semaine trouvée.</p>
             ) : (
               <>
-                <div className="row">
-                  {currentWeeks.map((week) => (
-                    <div key={`${week.semaine}-${week.annee}`} className="col-md-4 mb-3">
-                      <div
-                        className="card h-100 shadow-sm"
-                        style={{ cursor: "pointer" }}
-                        onClick={() => fetchWeekArticles(week.semaine, week.annee)}
-                      >
-                        <div className="card-body text-center">
-                          <h4 className="card-title">Semaine {week.semaine}</h4>
-                          <p className="card-text text-muted">Année {week.annee}</p>
-                          <span className="badge bg-primary">{week.count} articles</span>
-                        </div>
-                      </div>
+                {/* ── Barre : Afficher X cards + info ── */}
+                <div className="wv-cards-bar">
+                  <div className="wv-cards-length">
+                    <span>Afficher</span>
+                    <select
+                      value={weeksPerPage}
+                      onChange={(e) => { setWeeksPerPage(Number(e.target.value)); setWeekPage(1) }}
+                      className="wv-len-select"
+                    >
+                      {weekPageOptions.map((n) => (
+                        <option key={n} value={n}>{n}</option>
+                      ))}
+                    </select>
+                    <span>semaines</span>
+                  </div>
+                  <div className="wv-cards-info">
+                    {filteredWeeks.length === 0 ? "0 résultat" : (
+                      <>
+                        Semaines{" "}
+                        <strong>{(weekPage - 1) * weeksPerPage + 1}</strong>
+                        {" à "}
+                        <strong>{Math.min(weekPage * weeksPerPage, filteredWeeks.length)}</strong>
+                        {" sur "}
+                        <strong>{filteredWeeks.length}</strong>
+                      </>
+                    )}
+                  </div>
+                </div>
+
+                {/* Grille de cards */}
+                <div className="wv-grid">
+                  {currentWeeks.map((w) => (
+                    <div
+                      key={`${w.semaine}-${w.annee}`}
+                      className="wv-tile"
+                      onClick={() => fetchWeekArticles(w.semaine, w.annee)}
+                    >
+                      <h5>Semaine {w.semaine}</h5>
+                      <p>Année {w.annee}</p>
+                      <span className="wv-cnt"> articles</span>
                     </div>
                   ))}
                 </div>
 
+                {/* ── Pagination ── */}
                 {totalWeekPages > 1 && (
-                  <div className="d-flex justify-content-center align-items-center mt-3">
-                    <button
-                      className="btn btn-outline-primary me-2"
-                      onClick={() => setWeekPage((p) => Math.max(p - 1, 1))}
-                      disabled={weekPage === 1}
-                    >
-                      ← Précédent
-                    </button>
-                    <span>
-                      Page <strong>{weekPage}</strong> / {totalWeekPages}
-                    </span>
-                    <button
-                      className="btn btn-outline-primary ms-2"
-                      onClick={() => setWeekPage((p) => Math.min(p + 1, totalWeekPages))}
-                      disabled={weekPage === totalWeekPages}
-                    >
-                      Suivant →
-                    </button>
+                  <div className="wv-pages">
+                    <button onClick={() => setWeekPage((p) => Math.max(p - 1, 1))} disabled={weekPage === 1}>← Précédent</button>
+                    <span>Page <strong>{weekPage}</strong> / {totalWeekPages}</span>
+                    <button onClick={() => setWeekPage((p) => Math.min(p + 1, totalWeekPages))} disabled={weekPage === totalWeekPages}>Suivant →</button>
                   </div>
                 )}
               </>
             )}
           </div>
-        </div>
-      ) : (
-        <>
-          <div className="card shadow mb-3 bg-light">
-            <div className="card-body py-3">
-              <div className="d-flex justify-content-between align-items-center gap-3 flex-wrap">
-                {/* GROUPE GAUCHE : Changement de semaine + Export Excel */}
-                <div className="d-flex align-items-center gap-2">
-                  {/* Bouton retour semaine */}
-                  <button className="btn btn-light border" onClick={() => setSelectedWeek(null)}>
-                    <i className="bi bi-arrow-left"></i> Changer de semaine
-                  </button>
-
-                  {/* Dropdown Export par catégorie */}
-                  <div className="dropdown">
-                    <button
-                      className="btn btn-info dropdown-toggle"
-                      type="button"
-                      data-bs-toggle="dropdown"
-                      aria-expanded="false"
-                    >
-                      <i className="bi bi-file-earmark-excel"></i> Exporter Excel
-                    </button>
-                    <ul className="dropdown-menu">
-                      <li>
-                        <h6 className="dropdown-header">Boisson</h6>
-                      </li>
-                      <li>
-                        <button className="dropdown-item" onClick={() => handleExportExcel("boisson/snack")}>
-                          Boisson / Snack
-                        </button>
-                      </li>
-                      <li>
-                        <button className="dropdown-item" onClick={() => handleExportExcel("boisson/detente")}>
-                          Boisson / Détente
-                        </button>
-                      </li>
-                      <li>
-                        <button className="dropdown-item" onClick={() => handleExportExcel("boisson/resto")}>
-                          Boisson / Resto
-                        </button>
-                      </li>
-                      <li>
-                        <hr className="dropdown-divider" />
-                      </li>
-                      <li>
-                        <h6 className="dropdown-header">Salle</h6>
-                      </li>
-                      <li>
-                        <button className="dropdown-item" onClick={() => handleExportExcel("salle/snack")}>
-                          Salle / Snack
-                        </button>
-                      </li>
-                      <li>
-                        <button className="dropdown-item" onClick={() => handleExportExcel("salle/detente")}>
-                          Salle / Détente
-                        </button>
-                      </li>
-                      <li>
-                        <button className="dropdown-item" onClick={() => handleExportExcel("salle/resto")}>
-                          Salle / Resto
-                        </button>
-                      </li>
-                    </ul>
-                  </div>
-                </div>
-
-                {/* GROUPE CENTRE-DROITE : Recherche par dates */}
-                <div className="d-flex align-items-center gap-2">
-                  {/* DATE DÉBUT */}
-                  <div className="d-flex align-items-center gap-2">
-                    <label className="fw-bold mb-0 text-nowrap">Du</label>
-                    <input
-                      type="date"
-                      className="form-control form-control-sm"
-                      style={{ width: 150 }}
-                      value={startDate}
-                      max={endDate || undefined}
-                      onChange={(e) => {
-                        const newStartDate = e.target.value
-                        setStartDate(newStartDate)
-
-                        if (endDate && endDate < newStartDate) {
-                          setEndDate("")
-                        }
-
-                        setArticlePage(1)
-                      }}
-                    />
-                  </div>
-
-                  {/* DATE FIN */}
-                  <div className="d-flex align-items-center gap-2">
-                    <label className="fw-bold mb-0 text-nowrap">Au</label>
-                    <input
-                      type="date"
-                      className="form-control form-control-sm"
-                      style={{ width: 150 }}
-                      value={endDate}
-                      min={startDate || undefined}
-                      disabled={!startDate}
-                      title={!startDate ? "Sélectionnez d'abord une date de début" : ""}
-                      onChange={(e) => {
-                        const newEndDate = e.target.value
-                        if (startDate && newEndDate < startDate) return
-                        setEndDate(newEndDate)
-                        setArticlePage(1)
-                      }}
-                    />
-                  </div>
-
-                  {/* BOUTON RESET DATES */}
-                  {(startDate || endDate) && (
-                    <button
-                      className="btn btn-sm btn-outline-secondary"
-                      title="Effacer la période"
-                      onClick={() => {
-                        setStartDate("")
-                        setEndDate("")
-                        setArticlePage(1)
-                      }}
-                    >
-                      <i className="bi bi-x-lg"></i>
-                    </button>
-                  )}
-                </div>
-
-                {/* GROUPE DROITE : Recherche globale */}
-                <div className="d-flex align-items-center gap-2" style={{ minWidth: 250 }}>
-                  <input
-                    type="text"
-                    className="form-control form-control-sm"
-                    placeholder="Rechercher par n° ou nom..."
-                    value={searchTerm}
-                    onChange={(e) => {
-                      setSearchTerm(e.target.value)
-                      setArticlePage(1)
-                    }}
-                  />
-                  {searchTerm && (
-                    <button
-                      className="btn btn-sm btn-outline-secondary"
-                      title="Effacer la recherche"
-                      onClick={() => {
-                        setSearchTerm("")
-                        setArticlePage(1)
-                      }}
-                    >
-                      <i className="bi bi-x-lg"></i>
-                    </button>
-                  )}
-                </div>
+        ) : (
+          
+          <>
+            {/* 1. Titre centré */}
+            <div className="wv-art-title">
+              
+              <div className="sub">
+                Semaine&nbsp;<strong>{selectedWeek.semaine}</strong>&nbsp;—&nbsp;{selectedWeek.annee}
+                {selectedCategory && <span className="wv-chip">{selectedCategory}</span>}
               </div>
             </div>
-          </div>
 
-          <div className="card shadow" style={{ backgroundColor: "rgba(255,255,255,0.45)" }}>
-            <div className="card-body">
-              <h4 className="mb-3">
-                Semaine {selectedWeek.semaine} - {selectedWeek.annee}
-                {searchTerm && <span className="text-muted ms-2">(Filtré : {searchTerm})</span>}
-                {selectedCategory && <span className="badge bg-secondary ms-2">{selectedCategory}</span>}
-              </h4>
-              {totalArticlePages > 1 && (
-                <div className="d-flex justify-content-between align-items-center mt-3">
-                  <button
-                    className="btn btn-outline-primary btn-sm"
-                    onClick={() => setArticlePage((p) => Math.max(p - 1, 1))}
-                    disabled={articlePage === 1}
-                  >
-                    ◀ Précédent
-                  </button>
-                  <span>
-                    Page {articlePage} / {totalArticlePages}
-                  </span>
-                  <button
-                    className="btn btn-outline-primary btn-sm"
-                    onClick={() => setArticlePage((p) => Math.min(p + 1, totalArticlePages))}
-                    disabled={articlePage === totalArticlePages}
-                  >
-                    Suivant ▶
-                  </button>
-                </div>
+            {/* 2. Barre d'outils (alignée à droite) */}
+            <div className="wv-toolbar">
+              <button className="wv-btn-back" onClick={() => setSelectedWeek(null)}>
+                ← Changer de semaine
+              </button>
+              <div className="wv-sep" />
+
+              <div className="wv-dg">
+                <label>Du</label>
+                <input type="date" className="wv-di" value={startDate}
+                  max={endDate || undefined}
+                  onChange={(e) => { setStartDate(e.target.value); if (endDate && endDate < e.target.value) setEndDate("") }} />
+              </div>
+              <div className="wv-dg">
+                <label>Au</label>
+                <input type="date" className="wv-di" value={endDate}
+                  min={startDate || undefined}
+                  disabled={!startDate}
+                  title={!startDate ? "Sélectionnez d'abord une date de début" : ""}
+                  onChange={(e) => { if (startDate && e.target.value < startDate) return; setEndDate(e.target.value) }} />
+              </div>
+              {(startDate || endDate) && (
+                <button className="wv-bi" title="Effacer la période"
+                  onClick={() => { setStartDate(""); setEndDate("") }}>✕</button>
               )}
-              <div className="table-responsive">
-                <table className="table table-hover table-bordered">
-                  <thead className="table-light">
-                    <tr>
-                      <th style={{ cursor: "pointer" }} onClick={() => handleSort("article_id")}>
-                        ID {sortConfig.key === "article_id" && (sortConfig.direction === "asc" ? "▲" : "▼")}
-                      </th>
-                      <th style={{ cursor: "pointer" }} onClick={() => handleSort("categorie")}>
-                        Catégorie {sortConfig.key === "categorie" && (sortConfig.direction === "asc" ? "▲" : "▼")}
-                      </th>
-                      <th style={{ cursor: "pointer" }} onClick={() => handleSort("libelle")}>
-                        Libellé {sortConfig.key === "libelle" && (sortConfig.direction === "asc" ? "▲" : "▼")}
-                      </th>
-                      <th style={{ cursor: "pointer" }} onClick={() => handleSort("produit")}>
-                        Produit {sortConfig.key === "produit" && (sortConfig.direction === "asc" ? "▲" : "▼")}
-                      </th>
-                      <th style={{ cursor: "pointer" }} onClick={() => handleSort("date")}>
-                        Date {sortConfig.key === "date" && (sortConfig.direction === "asc" ? "▲" : "▼")}
-                      </th>
-                      <th>Semaine</th>
-                      <th>Année</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {currentArticles.length > 0 ? (
-                      currentArticles.map((article, i) => (
-                        <tr key={article.id_week || i}>
-                          <td>{article.article_id}</td>
-                          <td>
-                            <span className={`badge ${getCategoryBadgeClass(article.categorie)}`}>
-                              {article.categorie}
-                            </span>
-                          </td>
-                          <td>{article.libelle}</td>
-                          <td>{article.produit}</td>
-                          <td>{formatDate(article.date)}</td>
-                          <td>{article.semaine}</td>
-                          <td>{article.annee}</td>
-                        </tr>
-                      ))
-                    ) : (
-                      <tr>
-                        <td colSpan={7} className="text-center text-muted">
-                          Aucun article trouvé.
-                        </td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
+              <div className="wv-sep" />
+
+              <div className={"wv-dd" + (dropdownOpen ? " open" : "")}>
+                <button
+                  className="wv-btn-exp"
+                  onClick={() => setDropdownOpen((prev) => !prev)}
+                >
+                  📊 Exporter Excel ▾
+                </button>
+                {dropdownOpen && (
+                  <div className="wv-ddm">
+                    <div className="wv-ddh">Boisson</div>
+                    <button className="wv-ddi" onClick={() => { handleExportExcel("boisson/snack");  setDropdownOpen(false) }}>Boisson / Snack</button>
+                    <button className="wv-ddi" onClick={() => { handleExportExcel("boisson/detente"); setDropdownOpen(false) }}>Boisson / Détente</button>
+                    <button className="wv-ddi" onClick={() => { handleExportExcel("boisson/resto");  setDropdownOpen(false) }}>Boisson / Resto</button>
+                    <div className="wv-ddd" />
+                    <div className="wv-ddh">Salle</div>
+                    <button className="wv-ddi" onClick={() => { handleExportExcel("salle/snack");    setDropdownOpen(false) }}>Salle / Snack</button>
+                    <button className="wv-ddi" onClick={() => { handleExportExcel("salle/detente");  setDropdownOpen(false) }}>Salle / Détente</button>
+                    <button className="wv-ddi" onClick={() => { handleExportExcel("salle/resto");    setDropdownOpen(false) }}>Salle / Resto</button>
+                  </div>
+                )}
               </div>
             </div>
-          </div>
-        </>
-      )}
-    </div>
+
+            {/* 3. Carte tableau - GARDÉE EN BLANC */}
+            <div className="wv-tcard">
+              <div className="wv-topbar">
+                {loading && <span><span className="wv-spin-sm" />Chargement…</span>}
+                <input type="text" className="wv-si"
+                  placeholder="Rechercher par n° ou nom…"
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)} />
+                {searchTerm && (
+                  <button className="wv-bi" title="Effacer" onClick={() => setSearchTerm("")}>✕</button>
+                )}
+              </div>
+
+              <div className="wv-dt-wrap">
+                {/*
+                  ⚠️ Même principe : div conteneur only.
+                  Le <table> est injecté/retiré uniquement par DataTables.
+                */}
+                <div ref={articleWrapRef} />
+              </div>
+            </div>
+          </>
+        )}
+      </div>
+    </>
   )
 }
 

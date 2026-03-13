@@ -124,9 +124,7 @@ const badgeClass = (cat) => {
 
 const pwdMatch = (a, b) => a && b && a === b;
 
-// ─────────────────────────────────────────────────────────────────────────────
-// COMPOSANT PRINCIPAL
-// ─────────────────────────────────────────────────────────────────────────────
+
 const ManageUsersModal = ({ show, onClose, showProfil = false }) => {
   const { user: currentUser, setUser } = useAuth();
 
@@ -193,7 +191,19 @@ const ManageUsersModal = ({ show, onClose, showProfil = false }) => {
     onClose();
   };
 
+  // ── Si le profil est affiché, on cache toute la modale principale ────────────
+  // et on rend uniquement UserProfils au premier plan
   if (!show) return null;
+
+  if (panel === 'profil' && currentUser) {
+    return (
+      <UserProfils
+        user={currentUser}
+        onClose={handleClose}
+        onSaved={() => { fetchUsers(); setPanel(null); }}
+      />
+    );
+  }
 
   // ── SUPPRESSION ──────────────────────────────────────────────────────────────
   const handleDeleteClick   = (u) => setDeleteTarget(u);
@@ -364,7 +374,7 @@ const ManageUsersModal = ({ show, onClose, showProfil = false }) => {
   };
 
   // ─────────────────────────────────────────────────────────────────────────────
-  // RENDU
+  // RENDU PRINCIPAL (profil déjà géré plus haut — rendu exclusif)
   // ─────────────────────────────────────────────────────────────────────────────
   return (
     <>
@@ -658,15 +668,6 @@ const ManageUsersModal = ({ show, onClose, showProfil = false }) => {
           </div>
         </div>
       </div>
-
-      {/* ══ MON PROFIL — affiché par-dessus la modale principale ══ */}
-      {panel === 'profil' && currentUser && (
-        <UserProfils
-          user={currentUser}
-          onClose={() => setPanel(null)}
-          onSaved={() => { fetchUsers(); setPanel(null); }}
-        />
-      )}
 
       {/* ══ SUPPRESSION ══ */}
       <DeleteConfirmModal

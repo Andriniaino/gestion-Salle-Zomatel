@@ -2,7 +2,7 @@ import api from './api'
 
 // ─── Base URL (sans /api) ─────────────────────────────────────────────────────
 const getBaseURL = () => {
-  return (api.defaults.baseURL || "http://100.116.170.3:8000/api")
+  return (api.defaults.baseURL || "http://192.168.7.165:8000/api")
     .replace(/\/api\/?$/, "");
 };
 

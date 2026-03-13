@@ -104,7 +104,7 @@ class PerteController extends Controller
                 . "Commentaire : " . ($request->commentaire ?? 'Aucun') . "\n"
                 . "Date : " . now()->format('d/m/Y H:i'),
                 function ($message) use ($origine) {
-                    $message->to('economat@zomatel.com')
+                    $message->to('johanesaalitera@gmail.com')
                             ->subject("⚠️ Alerte Perte en — {$origine}");
                 }
             );
