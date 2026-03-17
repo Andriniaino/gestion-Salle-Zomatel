@@ -2,27 +2,44 @@ import api from './api'
 
 // ─── Base URL (sans /api) ─────────────────────────────────────────────────────
 const getBaseURL = () => {
-  return (api.defaults.baseURL || "http://192.168.7.165:8000/api")
-    .replace(/\/api\/?$/, "");
+  const baseURL = api.defaults.baseURL || "http://100.116.170.3:8000/api";
+  return baseURL.replace(/\/api\/?$/, "").replace(/\/+$/, "");
 };
 
 // ─── Construit l'URL publique de l'image d'un utilisateur ────────────────────
+// ✅ CORRIGÉ : pas de Date.now() ici — l'URL doit rester STABLE entre les rendus.
+//    Un timestamp dynamique génère une nouvelle URL à chaque re-render React,
+//    ce qui empêche le navigateur de charger (et de cacher) l'image.
+//    Le cache-busting est géré via le champ `updated_at` du backend si besoin.
 export const getUserImageUrl = (user) => {
   if (!user?.image) return null;
 
   const image = user.image;
-  const base  = getBaseURL();
 
-  let url;
+  // Déjà une URL complète (http:// ou https://)
   if (image.startsWith("http://") || image.startsWith("https://")) {
-    url = image;
-  } else if (image.startsWith("storage/")) {
-    url = `${base}/${image}`;
-  } else {
-    url = `${base}/storage/${image}`;
+    return image;
   }
 
-  // Le cache-busting est géré côté composant avec ?t=imageTimestamp
+  const base = getBaseURL();
+  // Nettoie les slashes multiples au début
+  const cleanImage = image.replace(/^\/+/, "");
+
+  // Laravel stocke les avatars dans storage/app/public/avatars
+  // Le lien symbolique `public/storage` → `storage/app/public` donne :
+  //   http://host/storage/avatars/fichier.jpg
+  // Le chemin enregistré en base est donc `avatars/fichier.jpg`
+  // ou parfois `storage/avatars/fichier.jpg` selon la config.
+  const url = cleanImage.startsWith("storage/")
+    ? `${base}/${cleanImage}`
+    : `${base}/storage/${cleanImage}`;
+
+  // ✅ Cache-busting STABLE : on utilise updated_at (mis à jour par le backend
+  //    uniquement quand la photo change), pas Date.now() qui change à chaque rendu.
+  if (user.updated_at) {
+    return `${url}?v=${encodeURIComponent(user.updated_at)}`;
+  }
+
   return url;
 };
 
@@ -30,9 +47,14 @@ export const getUserImageUrl = (user) => {
 export const getUsers = async () => {
   try {
     const response = await api.get("/users");
-    return { success: true, data: response.data?.data || response.data };
+    const users = response.data?.data || response.data;
+    return { success: true, data: Array.isArray(users) ? users : [] };
   } catch (error) {
-    return { success: false, error: error.message || "Erreur récupération utilisateurs" };
+    console.error("Erreur getUsers:", error);
+    return {
+      success: false,
+      error: error.response?.data?.message || error.message || "Erreur récupération utilisateurs",
+    };
   }
 };
 
@@ -40,30 +62,36 @@ export const getUsers = async () => {
 export const getUser = async (id) => {
   try {
     const response = await api.get(`/users/${id}`);
-    return { success: true, data: response.data?.data || response.data };
+    const user = response.data?.data || response.data;
+    return { success: true, data: user };
   } catch (error) {
-    return { success: false, error: error.message || `Erreur récupération utilisateur ${id}` };
+    console.error(`Erreur getUser ${id}:`, error);
+    return {
+      success: false,
+      error: error.response?.data?.message || error.message || `Erreur récupération utilisateur ${id}`,
+    };
   }
 };
 
 // ─── POST créer un utilisateur (FormData avec image optionnelle) ──────────────
-// ✅ FIX : utilise api Axios — token injecté automatiquement via intercepteur
 export const createUser = async (formData) => {
   try {
     const response = await api.post("/users", formData, {
       headers: { "Content-Type": "multipart/form-data" },
     });
+    const userData = response.data?.data || response.data;
     return {
       success: true,
-      data:    response.data?.data    || response.data,
+      data: userData,
       message: response.data?.message || "Utilisateur créé avec succès",
     };
   } catch (error) {
+    console.error("Erreur createUser:", error);
     const json = error.response?.data;
     return {
       success: false,
       message: json?.message || "Erreur lors de la création",
-      errors:  json?.errors  || null,
+      errors: json?.errors || null,
     };
   }
 };
@@ -72,41 +100,42 @@ export const createUser = async (formData) => {
 export const updateUser = async (id, userData) => {
   try {
     const response = await api.put(`/users/${id}`, userData);
+    const updatedUser = response.data?.data || response.data;
     return {
       success: true,
-      data:    response.data?.data    || response.data,
+      data: updatedUser,
       message: response.data?.message || "Utilisateur mis à jour avec succès",
     };
   } catch (error) {
+    console.error(`Erreur updateUser ${id}:`, error);
     return {
       success: false,
-      error:  error.message                || `Erreur mise à jour utilisateur ${id}`,
+      error: error.response?.data?.message || error.message || `Erreur mise à jour utilisateur ${id}`,
       errors: error.response?.data?.errors || {},
     };
   }
 };
 
 // ─── POST upload avatar ───────────────────────────────────────────────────────
-// ✅ FIX : utilise api Axios — résout "Authorization: Bearer null"
 export const uploadUserAvatar = async (id, file) => {
   try {
     const formData = new FormData();
     formData.append("image", file);
-
     const response = await api.post(`/users/${id}/avatar`, formData, {
       headers: { "Content-Type": "multipart/form-data" },
     });
     return {
       success: true,
-      data:    response.data?.data,
+      data: response.data?.data || response.data,
       message: response.data?.message || "Photo mise à jour",
     };
   } catch (error) {
+    console.error(`Erreur uploadUserAvatar ${id}:`, error);
     const json = error.response?.data;
     return {
       success: false,
-      error:  json?.message || "Erreur lors de l'upload",
-      errors: json?.errors  || {},
+      error: json?.message || "Erreur lors de l'upload",
+      errors: json?.errors || {},
     };
   }
 };
@@ -120,10 +149,11 @@ export const deleteUser = async (id) => {
       message: response.data?.message || "Utilisateur supprimé avec succès",
     };
   } catch (error) {
+    console.error(`Erreur deleteUser ${id}:`, error);
     return {
       success: false,
-      error:  error.message || `Erreur suppression utilisateur ${id}`,
-      errors: error.errors  || {},
+      error: error.response?.data?.message || error.message || `Erreur suppression utilisateur ${id}`,
+      errors: error.response?.data?.errors || {},
     };
   }
 };

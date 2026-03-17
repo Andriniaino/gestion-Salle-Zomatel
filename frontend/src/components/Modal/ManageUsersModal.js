@@ -20,6 +20,56 @@ const EMPTY_PWD    = { oldPassword: '', newPassword: '', confirmPassword: '' };
 const EMPTY_FORGOT = { newPassword: '', confirmPassword: '' };
 const EMPTY_CREATE = { nom: '', prenoms: '', email: '', password: '', confirmPassword: '', categorie: '' };
 
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+const getInitials = (user) =>
+  `${(user?.prenoms || '').charAt(0)}${(user?.nom || '').charAt(0)}`.toUpperCase() || '?';
+
+/**
+ * ✅ Composant avatar universel
+ * - Affiche la photo avec un vrai <img> (déclenche onError si l'URL est invalide)
+ * - Bascule automatiquement sur les initiales (ou icône générique) en cas d'erreur
+ * - Réinitialise l'état d'erreur si l'URL change (ex: après upload)
+ */
+const UserAvatar = ({ user, size = 40, fontSize = 14 }) => {
+  const [imgError, setImgError] = useState(false);
+  const imageUrl = getUserImageUrl(user);
+  const showImg  = imageUrl && !imgError;
+  const initials = getInitials(user);
+
+  useEffect(() => { setImgError(false); }, [imageUrl]);
+
+  const containerStyle = {
+    width: size, height: size,
+    borderRadius: '50%',
+    overflow: 'hidden',
+    flexShrink: 0,
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#e9ecef',
+    fontSize,
+    fontWeight: 600,
+    color: '#6c757d',
+    border: '2px solid #dee2e6',
+  };
+
+  return (
+    <div style={containerStyle}>
+      {showImg
+        ? <img
+            src={imageUrl}
+            alt={`Avatar de ${user?.prenoms || ''} ${user?.nom || ''}`}
+            onError={() => setImgError(true)}
+            style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+          />
+        : initials !== '?'
+          ? initials
+          : <FaUserCircle style={{ fontSize: size * 0.7, color: '#adb5bd' }} />
+      }
+    </div>
+  );
+};
+
 // ─── Notification inline ──────────────────────────────────────────────────────
 const Notif = ({ type, message, onClose }) => {
   if (!message) return null;
@@ -124,13 +174,15 @@ const badgeClass = (cat) => {
 
 const pwdMatch = (a, b) => a && b && a === b;
 
-
+// ─────────────────────────────────────────────────────────────────────────────
+// COMPOSANT PRINCIPAL
+// ─────────────────────────────────────────────────────────────────────────────
 const ManageUsersModal = ({ show, onClose, showProfil = false }) => {
   const { user: currentUser, setUser } = useAuth();
 
   const [users,           setUsers]           = useState([]);
   const [loading,         setLoading]         = useState(false);
-  const [panel,           setPanel]           = useState(null); // null | 'create' | 'edit' | 'profil'
+  const [panel,           setPanel]           = useState(null);
   const [editUser,        setEditUser]        = useState(null);
   const [formData,        setFormData]        = useState(EMPTY_FORM);
 
@@ -158,7 +210,6 @@ const ManageUsersModal = ({ show, onClose, showProfil = false }) => {
 
   const [tableNotif, setTableNotif] = useState(null);
 
-  // ── Chargement initial ───────────────────────────────────────────────────────
   useEffect(() => {
     if (show) {
       fetchUsers();
@@ -179,7 +230,6 @@ const ManageUsersModal = ({ show, onClose, showProfil = false }) => {
     }
   };
 
-  // ── Fermeture complète ───────────────────────────────────────────────────────
   const handleClose = () => {
     setPanel(null); setEditUser(null); setFormData(EMPTY_FORM);
     setCreateData(EMPTY_CREATE); setCreateErrors({}); setCreateNotif(null);
@@ -191,19 +241,7 @@ const ManageUsersModal = ({ show, onClose, showProfil = false }) => {
     onClose();
   };
 
-  // ── Si le profil est affiché, on cache toute la modale principale ────────────
-  // et on rend uniquement UserProfils au premier plan
   if (!show) return null;
-
-  if (panel === 'profil' && currentUser) {
-    return (
-      <UserProfils
-        user={currentUser}
-        onClose={handleClose}
-        onSaved={() => { fetchUsers(); setPanel(null); }}
-      />
-    );
-  }
 
   // ── SUPPRESSION ──────────────────────────────────────────────────────────────
   const handleDeleteClick   = (u) => setDeleteTarget(u);
@@ -374,7 +412,7 @@ const ManageUsersModal = ({ show, onClose, showProfil = false }) => {
   };
 
   // ─────────────────────────────────────────────────────────────────────────────
-  // RENDU PRINCIPAL (profil déjà géré plus haut — rendu exclusif)
+  // RENDU
   // ─────────────────────────────────────────────────────────────────────────────
   return (
     <>
@@ -404,7 +442,7 @@ const ManageUsersModal = ({ show, onClose, showProfil = false }) => {
                     <form onSubmit={handleSubmitCreate} noValidate>
                       <div className="row g-3">
 
-                        {/* Photo */}
+                        {/* ✅ Photo — aperçu local (URL.createObjectURL), pas d'appel API */}
                         <div className="col-12 mb-1">
                           <label className="form-label fw-semibold">Photo de profil</label>
                           <div className="d-flex align-items-center gap-3">
@@ -412,13 +450,15 @@ const ManageUsersModal = ({ show, onClose, showProfil = false }) => {
                               width: 64, height: 64, borderRadius: '50%', overflow: 'hidden',
                               backgroundColor: '#e9ecef', flexShrink: 0,
                               display: 'flex', alignItems: 'center', justifyContent: 'center',
-                              backgroundImage: createPreview ? `url(${createPreview})` : 'none',
-                              backgroundSize: 'cover', backgroundPosition: 'center',
                               fontSize: 20, fontWeight: 600, color: '#6c757d', border: '2px solid #dee2e6',
                             }}>
-                              {!createPreview && (createData.prenoms || createData.nom
-                                ? `${(createData.prenoms || '').charAt(0)}${(createData.nom || '').charAt(0)}`.toUpperCase()
-                                : <FaUserCircle style={{ fontSize: 30, color: '#adb5bd' }} />)}
+                              {createPreview
+                                ? <img src={createPreview} alt="Aperçu"
+                                    style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+                                : (createData.prenoms || createData.nom
+                                    ? `${(createData.prenoms || '').charAt(0)}${(createData.nom || '').charAt(0)}`.toUpperCase()
+                                    : <FaUserCircle style={{ fontSize: 30, color: '#adb5bd' }} />)
+                              }
                             </div>
                             <div className="d-flex flex-column gap-1">
                               <input type="file" accept="image/jpeg,image/png,image/gif,image/webp"
@@ -466,7 +506,7 @@ const ManageUsersModal = ({ show, onClose, showProfil = false }) => {
                           <input type="email" name="email"
                             className={`form-control${createErrors.email ? ' is-invalid' : ''}`}
                             value={createData.email} onChange={handleCreateChange}
-                            placeholder="zomatel@zomatel.com" disabled={createLoading} />
+                            placeholder="exemple@zomatel.mg" disabled={createLoading} />
                           {createErrors.email && <div className="invalid-feedback">{createErrors.email}</div>}
                         </div>
                         <div className="col-md-4">
@@ -521,20 +561,11 @@ const ManageUsersModal = ({ show, onClose, showProfil = false }) => {
                   <div className="card-body">
                     <form onSubmit={handleSubmitInfo}>
                       <div className="row g-3">
-                        {/* Photo édition */}
+                        {/* ✅ Photo édition — composant UserAvatar */}
                         <div className="col-12 mb-3">
                           <label className="form-label fw-semibold">Photo de profil</label>
                           <div className="d-flex align-items-center gap-3">
-                            <div style={{
-                              width: 60, height: 60, borderRadius: '50%', overflow: 'hidden',
-                              backgroundColor: '#e9ecef', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                              backgroundImage: getUserImageUrl(editUser) ? `url(${getUserImageUrl(editUser)})` : 'none',
-                              backgroundSize: 'cover', backgroundPosition: 'center',
-                              fontSize: 18, fontWeight: 600, color: '#6c757d',
-                            }}>
-                              {!getUserImageUrl(editUser) &&
-                                `${(editUser.prenoms || '').charAt(0)}${(editUser.nom || '').charAt(0)}`.toUpperCase()}
-                            </div>
+                            <UserAvatar user={editUser} size={60} fontSize={18} />
                             <div>
                               <input type="file" accept="image/*"
                                 className="form-control form-control-sm" style={{ maxWidth: 220 }}
@@ -609,7 +640,7 @@ const ManageUsersModal = ({ show, onClose, showProfil = false }) => {
                 </div>
               )}
 
-              {/* Tableau */}
+              {/* ✅ Tableau — UserAvatar dans chaque ligne */}
               {loading ? (
                 <div className="text-center py-5">
                   <div className="spinner-border" style={{ color: '#800020' }} role="status" />
@@ -630,18 +661,7 @@ const ManageUsersModal = ({ show, onClose, showProfil = false }) => {
                       {users.map((u, idx) => (
                         <tr key={u.id} className={editUser?.id === u.id ? 'table-primary' : ''}>
                           <td className="text-muted">{idx + 1}</td>
-                          <td>
-                            <div style={{
-                              width: 40, height: 40, borderRadius: '50%', overflow: 'hidden',
-                              backgroundColor: '#e9ecef', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                              backgroundImage: getUserImageUrl(u) ? `url(${getUserImageUrl(u)})` : 'none',
-                              backgroundSize: 'cover', backgroundPosition: 'center',
-                              fontSize: 14, fontWeight: 600, color: '#6c757d',
-                            }}>
-                              {!getUserImageUrl(u) &&
-                                `${(u.prenoms || '').charAt(0)}${(u.nom || '').charAt(0)}`.toUpperCase()}
-                            </div>
-                          </td>
+                          <td><UserAvatar user={u} size={40} fontSize={14} /></td>
                           <td className="fw-semibold">{u.nom}</td>
                           <td>{u.prenoms}</td>
                           <td className="text-muted small">{u.email}</td>
@@ -668,6 +688,15 @@ const ManageUsersModal = ({ show, onClose, showProfil = false }) => {
           </div>
         </div>
       </div>
+
+      {/* ══ MON PROFIL ══ */}
+      {panel === 'profil' && currentUser && (
+        <UserProfils
+          user={currentUser}
+          onClose={() => setPanel(null)}
+          onSaved={() => { fetchUsers(); setPanel(null); }}
+        />
+      )}
 
       {/* ══ SUPPRESSION ══ */}
       <DeleteConfirmModal

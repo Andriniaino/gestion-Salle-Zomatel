@@ -125,9 +125,15 @@ const WeekView = ({ onBack, selectedCategory }) => {
 
   useEffect(() => { setWeekPage(1) }, [searchWeek, weeksPerPage])
 
-  const totalWeekPages = Math.ceil(filteredWeeks.length / weeksPerPage)
-  const currentWeeks   = filteredWeeks.slice((weekPage - 1) * weeksPerPage, weekPage * weeksPerPage)
+  const totalWeekPages = useMemo(
+  () => Math.max(1, Math.ceil(filteredWeeks.length / weeksPerPage)),
+  [filteredWeeks.length, weeksPerPage]
+)
 
+const currentWeeks = useMemo(
+  () => filteredWeeks.slice((weekPage - 1) * weeksPerPage, weekPage * weeksPerPage),
+  [filteredWeeks, weekPage, weeksPerPage]
+)
 
   useEffect(() => {
     if (!selectedWeek) destroyDt(articleDtRef, articleWrapRef)
@@ -544,9 +550,15 @@ const WeekView = ({ onBack, selectedCategory }) => {
                 {/* ── Pagination ── */}
                 {totalWeekPages > 1 && (
                   <div className="wv-pages">
-                    <button onClick={() => setWeekPage((p) => Math.max(p - 1, 1))} disabled={weekPage === 1}>← Précédent</button>
-                    <span>Page <strong>{weekPage}</strong> / {totalWeekPages}</span>
-                    <button onClick={() => setWeekPage((p) => Math.min(p + 1, totalWeekPages))} disabled={weekPage === totalWeekPages}>Suivant →</button>
+                   <button
+  onClick={() => setWeekPage((p) => Math.max(p - 1, 1))}
+  disabled={weekPage <= 1}
+>← Précédent</button>
+<span>Page <strong>{weekPage}</strong> / <strong>{totalWeekPages}</strong></span>
+<button
+  onClick={() => setWeekPage((p) => (p < totalWeekPages ? p + 1 : p))}
+  disabled={weekPage >= totalWeekPages}
+>Suivant →</button>
                   </div>
                 )}
               </>

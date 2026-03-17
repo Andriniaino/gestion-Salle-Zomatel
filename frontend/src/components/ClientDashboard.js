@@ -7,7 +7,7 @@ import api from "../services/api"
 import Footer from "../components/Footer"
 import AjoutClient from "./Modal/AjoutClient"
 import ModalPertes from "./Modal/ModalPertes"
-import ManageUsersModal from "./Modal/ManageUsersModal"
+import UserProfils from "./Modal/UserProfils"
 import { getUserImageUrl } from "../services/userService"
 import zomatel from "../images/zoma.jpeg"
 
@@ -382,12 +382,13 @@ const ClientDashboard = () => {
       </div>
 
       {/* MODALS */}
-      <ManageUsersModal
-        show={showProfilModal}
-        onClose={() => setShowProfilModal(false)}
-        showProfil={true}
-      />
-
+      {showProfilModal && (
+  <UserProfils
+    user={user}
+    onClose={() => setShowProfilModal(false)}
+    onSaved={() => setShowProfilModal(false)}
+  />
+)}
       <div className="modal fade" id="logoutModal" tabIndex="-1" aria-labelledby="logoutModalLabel" aria-hidden="true">
         <div className="modal-dialog modal-dialog-centered">
           <div className="modal-content">
